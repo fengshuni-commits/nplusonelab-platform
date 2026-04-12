@@ -1,0 +1,33 @@
+# N+1 LAB 自动化平台 - 后端依赖
+# FastAPI 框架
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# 数据库
+sqlalchemy==2.0.25
+alembic==1.13.1
+aiosqlite==0.19.0  # SQLite 异步支持
+
+# 认证与安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+
+# HTTP 客户端
+httpx==0.26.0
+
+# 数据处理
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# 文件处理
+python-magic==0.4.27
+Pillow==10.2.0
+
+# 日志
+loguru==0.7.2
+
+# 测试
+pytest==7.4.4
+pytest-asyncio==0.23.3

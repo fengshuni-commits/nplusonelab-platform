@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N+1 LAB - 产品 BOM 管理中心</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .product-item:hover { background-color: #f3f4f6; }
+        .product-item.active { background-color: #e0e7ff; border-right: 3px solid #4f46e5; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="flex h-screen">
+        <!-- 左侧产品列表 -->
+        <div class="w-80 bg-white border-r border-gray-200 overflow-y-auto">
+            <div class="p-4 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800">📦 产品列表</h2>
+                <input type="text" id="searchInput" placeholder="搜索 SKU 或产品名..." 
+                    class="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div id="productList" class="divide-y divide-gray-100"></div>
+        </div>
+
+        <!-- 右侧 BOM 详情 -->
+        <div class="flex-1 overflow-y-auto">
+            <div class="p-6">
+                <!-- 产品概览 -->
+                <div id="productOverview" class="hidden">
+                    <div class="bg-white rounded-lg shadow p-6 mb-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h1 class="text-2xl font-bold text-gray-800" id="productName"></h1>
+                                <p class="text-gray-500">SKU: <span id="productSku" class="font-mono"></span></p>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm text-gray-500">BOM 成本</div>
+                                <div class="text-2xl font-bold text-red-600" id="productCost"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-4 gap-4">
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">零售价</div>
+                                <div class="text-lg font-semibold" id="retailPrice"></div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">经销商价</div>
+                                <div class="text-lg font-semibold" id="dealerPrice"></div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">零件数量</div>
+                                <div class="text-lg font-semibold" id="partCount"></div>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded-lg">
+                                <div class="text-xs text-gray-500">毛利率</div>
+                                <div class="text-lg font-semibold" id="margin"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOM 表格 -->
+                    <div class="bg-white rounded-lg shadow mb-6">
+                        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                            <h3 class="text-lg font-bold">🔧 BOM 零件清单</h3>
+                            <button onclick="exportToExcel()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                📥 导出 Excel
+                            </button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">零件名称</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">规格型号</th>
+                                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">用量</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">单价</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">小计</th>
+                                        <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">采购链接</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bomTableBody" class="divide-y divide-gray-100"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 成本分布图 -->
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-lg font-bold mb-4">📊 成本分布</h3>
+                        <canvas id="costChart" height="100"></canvas>
+                    </div>
+                </div>
+
+                <!-- 未选择产品提示 -->
+                <div id="noSelection" class="text-center text-gray-400 mt-20">
+                    <svg class="mx-auto h-24 w-24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                    </svg>
+                    <p class="mt-4 text-lg">请从左侧选择一个产品查看 BOM 详情</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = 'n1lab2026';
+        let allProducts = [];
+        let currentProduct = null;
+        let costChart = null;
+
+        // 加载产品列表
+        async function loadProducts() {
+            try {
+                const resp = await fetch('http://43.156.225.39:8000/admin/product-bom-center', {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                allProducts = await resp.json();
+                renderProductList(allProducts);
+            } catch (error) {
+                console.error('加载失败:', error);
+                alert('加载失败，请确保后端服务已启动 (端口 8000)');
+            }
+        }
+
+        // 渲染产品列表
+        function renderProductList(products) {
+            const container = document.getElementById('productList');
+            container.innerHTML = products.map(p => `
+                <div class="product-item p-4 cursor-pointer transition-colors" onclick="selectProduct(${p.id})">
+                    <div class="font-semibold text-gray-800">${p.sku_code}</div>
+                    <div class="text-sm text-gray-500">${p.product_name}</div>
+                    <div class="text-xs text-gray-400 mt-1">${p.bom_count} 个零件 · 成本 ¥${p.total_bom_cost}</div>
+                </div>
+            `).join('');
+        }
+
+        // 选择产品
+        function selectProduct(productId) {
+            currentProduct = allProducts.find(p => p.id === productId);
+            if (!currentProduct) return;
+
+            // 更新 UI
+            document.getElementById('noSelection').classList.add('hidden');
+            document.getElementById('productOverview').classList.remove('hidden');
+            
+            // 更新产品概览
+            document.getElementById('productName').textContent = currentProduct.product_name;
+            document.getElementById('productSku').textContent = currentProduct.sku_code;
+            document.getElementById('productCost').textContent = `¥${currentProduct.total_bom_cost}`;
+            document.getElementById('retailPrice').textContent = `¥${currentProduct.retail_price}`;
+            document.getElementById('dealerPrice').textContent = `¥${currentProduct.dealer_price}`;
+            document.getElementById('partCount').textContent = currentProduct.bom_count;
+            document.getElementById('margin').textContent = `${currentProduct.margin}%`;
+
+            // 渲染 BOM 表格
+            const tbody = document.getElementById('bomTableBody');
+            tbody.innerHTML = currentProduct.bom_items.map(item => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm font-medium text-gray-800">${item.part_name}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600">${item.specs || '-'}</td>
+                    <td class="px-4 py-3 text-sm text-center text-gray-600">${item.quantity}</td>
+                    <td class="px-4 py-3 text-sm text-right text-gray-600">¥${item.estimated_cost.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-sm text-right font-medium text-gray-800">¥${item.item_cost.toFixed(2)}</td>
+                    <td class="px-4 py-3 text-center">
+                        ${item.link ? `<a href="${item.link}" target="_blank" class="text-indigo-600 hover:text-indigo-800">🔗 查看</a>` : '<span class="text-gray-400">-</span>'}
+                    </td>
+                </tr>
+            `).join('');
+
+            // 渲染成本分布图
+            renderCostChart();
+
+            // 更新活动状态
+            document.querySelectorAll('.product-item').forEach(el => el.classList.remove('active'));
+            event.target.closest('.product-item').classList.add('active');
+        }
+
+        // 渲染成本分布图
+        function renderCostChart() {
+            const ctx = document.getElementById('costChart').getContext('2d');
+            
+            // 取前 8 大成本零件
+            const topParts = currentProduct.bom_items
+                .sort((a, b) => b.item_cost - a.item_cost)
+                .slice(0, 8);
+
+            if (costChart) costChart.destroy();
+
+            costChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: topParts.map(p => p.part_name),
+                    datasets: [{
+                        data: topParts.map(p => p.item_cost),
+                        backgroundColor: [
+                            '#4f46e5', '#7c3aed', '#db2777', '#dc2626',
+                            '#ea580c', '#ca8a04', '#16a34a', '#0891b2'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+        }
+
+        // 导出 Excel
+        function exportToExcel() {
+            if (!currentProduct) return;
+            
+            let csv = '零件名称，规格型号，用量，单价，小计，采购链接\n';
+            currentProduct.bom_items.forEach(item => {
+                csv += `"${item.part_name}","${item.specs || ''}",${item.quantity},${item.estimated_cost},${item.item_cost},"${item.link || ''}"\n`;
+            });
+
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${currentProduct.sku_code}_BOM_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+        }
+
+        // 搜索功能
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            const keyword = e.target.value.toLowerCase();
+            const filtered = allProducts.filter(p => 
+                p.sku_code.toLowerCase().includes(keyword) ||
+                p.product_name.toLowerCase().includes(keyword)
+            );
+            renderProductList(filtered);
+        });
+
+        // 初始化
+        loadProducts();
+    </script>
+</body>
+</html>

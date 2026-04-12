@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N+1 LAB 产品中心 - BOM 可视化测试</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* 统计卡片 */
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); text-align: center; }
+        .stat-value { font-size: 24px; font-weight: bold; margin-top: 8px; }
+        .stat-label { font-size: 13px; color: #8c8c8c; }
+        
+        /* 表格 */
+        table { width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        th, td { padding: 14px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #fafafa; font-weight: 600; }
+        tr:hover { background: #f5f5f5; }
+        
+        .btn { padding: 6px 14px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; }
+        .btn-primary { background: #1890ff; color: white; }
+        .btn-success { background: #52c41a; color: white; }
+        
+        /* 弹窗 */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal.show { display: flex; }
+        .modal-content { background: white; width: 90%; max-width: 1000px; max-height: 85vh; overflow-y: auto; border-radius: 12px; padding: 24px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 style="margin-bottom:20px;">📦 N+1 LAB 产品中心 - BOM 可视化</h1>
+        
+        <!-- 统计摘要 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">产品总数</div>
+                <div class="stat-value" style="color:#1890ff;" id="stat-count">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">零件包总成本</div>
+                <div class="stat-value" style="color:#fa8c16;" id="stat-cost">¥0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">零件包总售价</div>
+                <div class="stat-value" style="color:#52c41a;" id="stat-price">¥0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">平均毛利率</div>
+                <div class="stat-value" style="color:#722ed1;" id="stat-margin">0%</div>
+            </div>
+        </div>
+        
+        <!-- 产品列表 -->
+        <table>
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>产品名称</th>
+                    <th>分类</th>
+                    <th>零件包成本</th>
+                    <th>零件包售价</th>
+                    <th>零售价</th>
+                    <th>毛利率</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="products-body"></tbody>
+        </table>
+    </div>
+    
+    <!-- BOM 弹窗 -->
+    <div class="modal" id="bom-modal">
+        <div class="modal-content">
+            <h2 style="margin-bottom:20px;" id="bom-title">BOM 明细</h2>
+            <div id="bom-body"></div>
+            <button onclick="closeModal()" class="btn" style="margin-top:20px; width:100%;">关闭</button>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://43.156.225.39:8080';
+        const API_KEY = 'n1lab2026';
+        
+        async function loadProducts() {
+            try {
+                const res = await fetch(`${API_BASE}/admin/products/bom-costs`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const products = await res.json();
+                
+                // 计算统计
+                let totalCost = 0, totalPrice = 0, totalMargin = 0;
+                products.forEach(p => {
+                    totalCost += p.bom_cost;
+                    totalPrice += p.dealer_price;
+                    totalMargin += p.margin;
+                });
+                const avgMargin = products.length > 0 ? totalMargin / products.length : 0;
+                
+                // 更新统计卡片
+                document.getElementById('stat-count').textContent = products.length;
+                document.getElementById('stat-cost').textContent = '¥' + totalCost.toFixed(2);
+                document.getElementById('stat-price').textContent = '¥' + totalPrice.toFixed(2);
+                document.getElementById('stat-margin').textContent = avgMargin.toFixed(1) + '%';
+                
+                // 渲染表格
+                const tbody = document.getElementById('products-body');
+                tbody.innerHTML = '';
+                products.forEach(p => {
+                    const marginColor = p.margin > 30 ? '#52c41a' : (p.margin > 15 ? '#fa8c16' : '#ff4d4f');
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${p.sku_code}</td>
+                        <td style="font-weight:bold;">${p.product_name}</td>
+                        <td>${p.category}</td>
+                        <td style="color:#fa8c16; font-weight:bold;">¥${p.bom_cost.toFixed(2)}</td>
+                        <td style="color:#1890ff; font-weight:bold;">¥${p.dealer_price.toFixed(2)}</td>
+                        <td>¥${p.retail_price.toFixed(2)}</td>
+                        <td style="color:${marginColor}; font-weight:bold;">${p.margin.toFixed(1)}%</td>
+                        <td><button class="btn btn-primary" onclick="showBOM(${p.id}, '${p.product_name}')">🔍 查看 BOM</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                alert('加载失败：' + e.message);
+                console.error(e);
+            }
+        }
+        
+        async function showBOM(productId, productName) {
+            document.getElementById('bom-title').textContent = `BOM 明细：${productName}`;
+            const body = document.getElementById('bom-body');
+            body.innerHTML = '<p>加载中...</p>';
+            document.getElementById('bom-modal').classList.add('show');
+            
+            try {
+                const res = await fetch(`${API_BASE}/products/${productId}/bom`, {
+                    headers: { 'X-API-Key': API_KEY }
+                });
+                const bom = await res.json();
+                
+                if (!bom || bom.length === 0) {
+                    body.innerHTML = '<p style="color:#fa8c16; text-align:center; padding:40px;">⚠️ 该产品暂无 BOM 数据</p>';
+                    return;
+                }
+                
+                let totalCost = 0;
+                let html = '<table><thead><tr><th>零件名称</th><th>规格</th><th>数量</th><th>单价</th><th>小计</th><th>采购链接</th></tr></thead><tbody>';
+                bom.forEach(item => {
+                    const qty = parseFloat(item.quantity) || 1;
+                    const cost = (item.estimated_cost || 0) * qty;
+                    totalCost += cost;
+                    const link = item.link ? `<a href="${item.link}" target="_blank">🔗</a>` : '-';
+                    html += `<tr>
+                        <td style="font-weight:bold;">${item.part_name}</td>
+                        <td>${item.specs || '-'}</td>
+                        <td style="color:#f5222d;">${qty}</td>
+                        <td>¥${(item.estimated_cost || 0).toFixed(2)}</td>
+                        <td style="font-weight:bold;">¥${cost.toFixed(2)}</td>
+                        <td>${link}</td>
+                    </tr>`;
+                });
+                html += `</tbody><tfoot><tr style="background:#f5f5f5; font-weight:bold;">
+                    <td colspan="4" style="text-align:right; padding:12px;">BOM 总成本：</td>
+                    <td colspan="2" style="color:#fa8c16; font-size:16px;">¥${totalCost.toFixed(2)}</td>
+                </tr></tfoot></table>`;
+                body.innerHTML = html;
+            } catch (e) {
+                body.innerHTML = '<p style="color:red;">加载失败：' + e.message + '</p>';
+            }
+        }
+        
+        function closeModal() {
+            document.getElementById('bom-modal').classList.remove('show');
+        }
+        
+        // 页面加载时自动加载数据
+        loadProducts();
+    </script>
+</body>
+</html>

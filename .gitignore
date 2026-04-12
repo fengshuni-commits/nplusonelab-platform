@@ -1,0 +1,42 @@
+# Secrets
+*.env
+.secrets/
+*.enc
+*.key
+*.pem
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Database files (contain sensitive data)
+*.db
+*.db.backup*
+*.sqlite
+
+# Large binary files
+*.zip
+*.tar.gz
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.DS_Store
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node modules
+node_modules/
+
+# Build artifacts
+dist/
+build/

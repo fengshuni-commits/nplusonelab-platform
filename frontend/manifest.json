@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "N+1 LAB 采购助手 v7.0",
+  "version": "7.0",
+  "description": "人机协作版：Shuni 点击验证 + 插件自动填数量 + 循环处理",
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.taobao.com/*",
+        "https://*.tmall.com/*",
+        "http://43.156.225.39:8080/*",
+        "http://localhost:8080/*",
+        "http://43.156.225.39:8000/*",
+        "http://localhost:8000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "N+1 LAB 采购助手",
+    "default_icon": {
+      "16": "icon.svg",
+      "48": "icon.svg",
+      "128": "icon.svg"
+    }
+  },
+  "icons": {
+    "16": "icon.svg",
+    "48": "icon.svg",
+    "128": "icon.svg"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*.png", "*.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

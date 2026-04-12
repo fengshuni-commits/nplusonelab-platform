@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "N+1 LAB 采购助手 v7.2",
+  "version": "7.2",
+  "description": "支持多件采购：可指定采购 1-99 件产品",
+  "permissions": ["tabs", "storage", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.taobao.com/*",
+        "https://*.tmall.com/*",
+        "http://43.156.225.39:8080/*",
+        "http://localhost:8080/*"
+      ],
+      "js": ["content.js"]
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>N+1 LAB 采购助手 v7.5 下载</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1890ff; }
+        .download-btn {
+            display: inline-block;
+            padding: 15px 30px;
+            background: #52c41a;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+        .download-btn:hover { background: #389e0d; }
+        .step {
+            background: #f0f5ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #1890ff;
+        }
+        .warning {
+            background: #fff7e6;
+            border-left-color: #fa8c16;
+        }
+        .success {
+            background: #f6ffed;
+            border-left-color: #52c41a;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "Courier New", monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🦐 N+1 LAB 采购助手 v7.5</h1>
+        <p><strong>版本</strong>：v7.5 (修复版)</p>
+        <p><strong>更新内容</strong>：
+            <ul>
+                <li>✅ 修复 URL 参数监听（n1_auto_add, n1_qty）</li>
+                <li>✅ 支持自动填写采购数量</li>
+                <li>✅ 智能重试机制</li>
+            </ul>
+        </p>
+        
+        <a href="/downloads/n1_helper_v7.5.tar.gz" class="download-btn">📥 点击下载插件包</a>
+        
+        <div class="step">
+            <h3>📋 安装步骤</h3>
+            <ol>
+                <li>点击上方绿色按钮下载插件包</li>
+                <li>解压下载的压缩包（<code>n1_helper_v7.5.tar.gz</code>）</li>
+                <li>打开 Chrome 浏览器，访问 <code>chrome://extensions/</code></li>
+                <li>打开右上角 <strong>开发者模式</strong> 开关</li>
+                <li>点击 <strong>加载已解压的扩展程序</strong></li>
+                <li>选择解压后的 <code>extension</code> 文件夹</li>
+                <li>确认加载成功</li>
+            </ol>
+        </div>
+        
+        <div class="step warning">
+            <h3>⚠️ 重要提示</h3>
+            <ul>
+                <li>必须先<strong>移除旧版本插件</strong>（v7.2 或更早）</li>
+                <li>确保加载的是<strong>解压后的文件夹</strong>，不是压缩包</li>
+                <li>加载成功后，插件版本应显示为 <strong>7.5</strong></li>
+            </ul>
+        </div>
+        
+        <div class="step success">
+            <h3>✅ 验证方法</h3>
+            <ol>
+                <li>打开淘宝商品页面</li>
+                <li>在 URL 后添加：<code>?n1_auto_add=1&n1_qty=3</code></li>
+                <li>刷新页面</li>
+                <li>检查右上角是否出现 <strong>🦐 小虾虾 v6.8</strong> 悬浮窗</li>
+            </ol>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>🔧 测试链接</h3>
+        <p>复制以下链接到浏览器测试：</p>
+        <p><code>https://item.taobao.com/item.htm?id=123456789&n1_auto_add=1&n1_qty=3</code></p>
+        <p><strong>预期结果</strong>：自动填写数量输入框为 3，显示悬浮窗</p>
+    </div>
+    
+    <script>
+        console.log('🦐 N+1 插件下载页面已加载');
+    </script>
+</body>
+</html>

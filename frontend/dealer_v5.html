@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N+1 LAB 经销商门户 - v5.0 (购物车版)</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; }
+        .header { background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%); color: white; padding: 24px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); position: relative; }
+        .cart-icon { position: absolute; right: 30px; top: 50%; transform: translateY(-50%); background: white; color: #1890ff; padding: 8px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .cart-icon:hover { background: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .tabs { display: flex; background: white; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); overflow: hidden; }
+        .tab-item { flex: 1; padding: 16px; text-align: center; cursor: pointer; transition: 0.3s; color: #595959; font-weight: 500; }
+        .tab-item:hover { background: #f5f5f5; }
+        .tab-item.active { background: #1890ff; color: white; }
+        .section { display: none; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .section.active { display: block; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-card.blue { background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%); }
+        .stat-card.green { background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%); }
+        .stat-card.orange { background: linear-gradient(135deg, #fa8c16 0%, #d46b08 100%); }
+        .stat-value { font-size: 32px; font-weight: bold; margin-bottom: 8px; }
+        .stat-label { font-size: 14px; opacity: 0.9; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 14px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #fafafa; font-weight: 600; color: #262626; }
+        tr:hover { background: #f5f5f5; }
+        .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+        .status-pending { background: #fff7e6; color: #fa8c16; }
+        .status-paid { background: #e6f7ff; color: #1890ff; }
+        .status-shipped { background: #f6ffed; color: #52c41a; }
+        .btn { padding: 8px 16px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer; transition: 0.3s; }
+        .btn:hover { background: #40a9ff; }
+        .btn-small { padding: 4px 12px; font-size: 13px; }
+        .btn-success { background: #52c41a; }
+        .btn-success:hover { background: #73d13d; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #262626; font-weight: 500; }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+        .auth-box { max-width: 500px; margin: 60px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .auth-box h2 { text-align: center; margin-bottom: 30px; color: #262626; }
+        .shipping-info { background: #f5f5f5; padding: 12px; border-radius: 6px; margin-top: 8px; font-size: 13px; color: #595959; }
+        .welcome-bar { background: #e6f7ff; border: 1px solid #91d5ff; padding: 16px 20px; border-radius: 6px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        
+        /* 购物车样式 */
+        .cart-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .cart-modal.show { display: flex; justify-content: center; align-items: center; }
+        .cart-content { background: white; width: 90%; max-width: 800px; max-height: 80vh; overflow-y: auto; border-radius: 12px; padding: 24px; }
+        .cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0; }
+        .cart-item { display: flex; align-items: center; padding: 15px 0; border-bottom: 1px solid #f0f0f0; }
+        .cart-item-info { flex: 1; }
+        .cart-item-qty { display: flex; align-items: center; gap: 10px; }
+        .qty-btn { width: 32px; height: 32px; border: 1px solid #d9d9d9; background: white; border-radius: 4px; cursor: pointer; font-size: 18px; }
+        .qty-btn:hover { border-color: #1890ff; color: #1890ff; }
+        .qty-input { width: 60px; text-align: center; border: 1px solid #d9d9d9; border-radius: 4px; padding: 4px; }
+        .cart-footer { margin-top: 20px; padding-top: 15px; border-top: 2px solid #f0f0f0; text-align: right; }
+        .cart-total { font-size: 20px; font-weight: bold; color: #ff4d4f; margin-bottom: 15px; }
+        
+        /* 银行信息 */
+        .bank-info-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+        .bank-info-card h3 { margin-bottom: 20px; font-size: 20px; }
+        .bank-info-row { display: flex; margin-bottom: 12px; font-size: 15px; }
+        .bank-info-label { width: 120px; opacity: 0.9; }
+        .bank-info-value { font-weight: bold; }
+        .payment-note { background: #fff7e6; border: 1px solid #ffd591; padding: 15px; border-radius: 6px; margin-top: 20px; color: #fa8c16; }
+        
+        /* 数量输入框（产品列表） */
+        .qty-input-cell { display: flex; align-items: center; gap: 8px; }
+        .qty-input-cell input { width: 70px; text-align: center; padding: 6px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏭 N+1 LAB 经销商服务门户 - v5.0</h1>
+        <p>诚邀合作伙伴，共创空间产品新范式</p>
+        <div class="cart-icon" onclick="toggleCart()" id="cart-icon" style="display:none;">
+            🛒 购物车 (<span id="cart-count">0</span>)
+        </div>
+    </div>
+
+    <div id="auth-section">
+        <div class="auth-box">
+            <h2>经销商入口</h2>
+            <div class="form-group">
+                <label>已有账号？输入手机号登录</label>
+                <input type="text" id="login-phone" placeholder="输入手机号">
+            </div>
+            <button onclick="checkStatus()" class="btn" style="width:100%; margin-bottom:20px;">登录/查询进度</button>
+            <div style="border-top:1px solid #eee; padding-top:20px;">
+                <p style="font-size:14px; color:#8c8c8c; text-align:center; margin-bottom:15px;">新用户请填写入驻申请</p>
+                <div class="form-group"><input type="text" id="company-name" placeholder="公司名称"></div>
+                <div class="form-group"><input type="text" id="contact-name" placeholder="姓名"></div>
+                <div class="form-group"><input type="text" id="contact-phone" placeholder="电话"></div>
+                <button onclick="submitApply()" class="btn" style="width:100%; background:#52c41a">提交入驻申请</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="dealer-main" style="display:none;" class="container">
+        <div class="welcome-bar">
+            <span id="welcome-msg">👋 欢迎</span>
+            <button onclick="logout()" class="btn btn-small">退出登录</button>
+        </div>
+
+        <div class="tabs">
+            <div class="tab-item active" onclick="showTab('dashboard')">📊 数据统计</div>
+            <div class="tab-item" onclick="showTab('products')">🛒 产品选购</div>
+            <div class="tab-item" onclick="showTab('orders')">📦 我的订单</div>
+            <div class="tab-item" onclick="showTab('profile')">🏢 公司信息</div>
+        </div>
+
+        <!-- 数据统计 -->
+        <div id="tab-dashboard" class="section active">
+            <h2 style="margin-bottom:20px;">数据概览</h2>
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-value" id="stat-total-orders">0</div><div class="stat-label">累计订单</div></div>
+                <div class="stat-card blue"><div class="stat-value" id="stat-total-amount">¥0</div><div class="stat-label">累计金额</div></div>
+                <div class="stat-card green"><div class="stat-value" id="stat-month-orders">0</div><div class="stat-label">本月订单</div></div>
+                <div class="stat-card orange"><div class="stat-value" id="stat-pending-orders">0</div><div class="stat-label">待发货订单</div></div>
+            </div>
+            <h3 style="margin:30px 0 15px;">订单状态分布</h3>
+            <div class="stats-grid">
+                <div class="stat-card" style="background: linear-gradient(135deg, #f0f0f0 0%, #d9d9d9 100%);"><div class="stat-value" id="stat-pending">0</div><div class="stat-label">待发货</div></div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);"><div class="stat-value" id="stat-paid">0</div><div class="stat-label">已付款</div></div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);"><div class="stat-value" id="stat-shipped">0</div><div class="stat-label">已发货</div></div>
+            </div>
+        </div>
+
+        <!-- 产品选购 -->
+        <div id="tab-products" class="section">
+            <h2 style="margin-bottom:20px;">产品目录</h2>
+            <table id="products-table">
+                <thead>
+                    <tr><th>产品编号</th><th>产品名称</th><th>分类</th><th>采购价</th><th>零售参考</th><th>选购数量</th></tr>
+                </thead>
+                <tbody id="products-body"></tbody>
+            </table>
+            <div style="margin-top:20px; text-align:right; padding:20px; background:#f5f5f5; border-radius:8px;">
+                <div style="margin-bottom:15px; color:#595959;">
+                    已选 <strong id="quick-cart-count" style="color:#1890ff; font-size:18px;">0</strong> 款商品，
+                    总计 <strong id="quick-cart-total" style="color:#ff4d4f; font-size:18px;">¥0</strong>
+                </div>
+                <button onclick="toggleCart()" class="btn btn-success" style="font-size:16px; padding:12px 30px;">🛒 去结算</button>
+            </div>
+        </div>
+
+        <!-- 我的订单 -->
+        <div id="tab-orders" class="section">
+            <h2 style="margin-bottom:20px;">订单历史</h2>
+            <table id="orders-table">
+                <thead>
+                    <tr><th>订单号</th><th>下单时间</th><th>商品</th><th>总金额</th><th>状态</th><th>物流信息</th></tr>
+                </thead>
+                <tbody id="orders-body"></tbody>
+            </table>
+        </div>
+
+        <!-- 公司信息 -->
+        <div id="tab-profile" class="section">
+            <h2 style="margin-bottom:20px;">公司信息维护</h2>
+            <form id="profile-form" onsubmit="saveProfile(event)">
+                <div class="form-grid">
+                    <div class="form-group"><label>公司名称 *</label><input type="text" id="profile-company" required></div>
+                    <div class="form-group"><label>联系人 *</label><input type="text" id="profile-contact" required></div>
+                    <div class="form-group"><label>联系电话 *</label><input type="text" id="profile-phone" required readonly></div>
+                    <div class="form-group"><label>税号</label><input type="text" id="profile-tax-id" placeholder="统一社会信用代码"></div>
+                    <div class="form-group"><label>发票抬头</label><input type="text" id="profile-invoice-title" placeholder="与公司名称一致可不填"></div>
+                    <div class="form-group"><label>营业执照 URL</label><input type="text" id="profile-license" placeholder="上传至云存储后填写链接"></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>发票地址</label><textarea id="profile-invoice-addr" rows="2" placeholder="接收发票的详细地址"></textarea></div>
+                    <div class="form-group" style="grid-column: 1 / -1;"><label>收货地址 *</label><textarea id="profile-shipping-addr" rows="3" required placeholder="详细收货地址"></textarea></div>
+                    <div class="form-group"><label>收货联系人</label><input type="text" id="profile-shipping-contact" placeholder="默认同联系人"></div>
+                    <div class="form-group"><label>收货电话</label><input type="text" id="profile-shipping-phone" placeholder="默认同联系电话"></div>
+                </div>
+                <button type="submit" class="btn" style="margin-top:20px;">💾 保存信息</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 购物车弹窗 -->
+    <div id="cart-modal" class="cart-modal">
+        <div class="cart-content">
+            <div class="cart-header">
+                <h2>🛒 购物车</h2>
+                <button onclick="toggleCart()" class="btn btn-small">✕ 关闭</button>
+            </div>
+            <div id="cart-items"></div>
+            <div class="cart-footer">
+                <div class="cart-total">总计：<span id="cart-total-amount">¥0</span></div>
+                <button onclick="showBankInfo()" class="btn btn-success" style="font-size:16px; padding:12px 30px;">💳 去结算</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 银行信息弹窗 -->
+    <div id="bank-modal" class="cart-modal">
+        <div class="cart-content">
+            <div class="cart-header">
+                <h2>💳 对公转账信息</h2>
+                <button onclick="closeBankModal()" class="btn btn-small">✕ 关闭</button>
+            </div>
+            <div id="bank-info-content"></div>
+            <div class="payment-note">
+                <strong>⚠️ 付款说明：</strong><br>
+                1. 请使用公司对公账户转账<br>
+                2. 转账时务必备注订单号（如：ORD00015）<br>
+                3. 财务核实到款后会在 1-2 个工作日内发货<br>
+                4. 发货后会短信通知您物流单号
+            </div>
+            <div style="margin-top:20px; text-align:right;">
+                <button onclick="closeBankModal()" class="btn" style="margin-right:10px;">返回修改</button>
+                <button onclick="confirmOrder()" class="btn btn-success">✅ 确认下单</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://43.156.225.39:8080';
+        let currentPhone = '';
+        let currentDealer = null;
+        let cart = {}; // { productId: { product, quantity } }
+        let currentOrderNo = '';
+
+        function showTab(tabId) {
+            document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            // 通过 tabId 找到对应的 tab 元素并激活（避免依赖 event 对象）
+            const tabElement = document.querySelector(`.tab-item[onclick="showTab('${tabId}')"]`);
+            if (tabElement) tabElement.classList.add('active');
+            if (tabId === 'dashboard') loadStats();
+            if (tabId === 'orders') loadOrders();
+            if (tabId === 'profile') loadProfile();
+        }
+
+        function toggleCart() {
+            const modal = document.getElementById('cart-modal');
+            modal.classList.toggle('show');
+            if (modal.classList.contains('show')) renderCart();
+        }
+
+        // 监听数量输入，自动更新购物车
+        function updateQtyInput(productId) {
+            const qtyInput = document.getElementById(`qty-${productId}`);
+            const qty = parseInt(qtyInput.value) || 0;
+            const product = window.products.find(p => p.id === productId);
+            
+            if (qty > 0) {
+                cart[productId] = { product, quantity: qty };
+                qtyInput.style.borderColor = '#52c41a';
+                qtyInput.style.background = '#f6ffed';
+            } else {
+                delete cart[productId];
+                qtyInput.style.borderColor = '#d9d9d9';
+                qtyInput.style.background = 'white';
+            }
+            
+            updateCartIcon();
+        }
+
+        function updateCartIcon() {
+            const items = Object.values(cart);
+            const count = items.reduce((sum, item) => sum + item.quantity, 0);
+            const total = items.reduce((sum, item) => sum + item.product.dealer_price * item.quantity, 0);
+            
+            document.getElementById('cart-count').textContent = count;
+            document.getElementById('cart-icon').style.display = count > 0 ? 'block' : 'none';
+            document.getElementById('quick-cart-count').textContent = count;
+            document.getElementById('quick-cart-total').textContent = '¥' + total.toFixed(2);
+        }
+
+        function renderCart() {
+            const items = Object.values(cart);
+            if (items.length === 0) {
+                document.getElementById('cart-items').innerHTML = '<p style="text-align:center; padding:40px; color:#8c8c8c;">购物车是空的～</p>';
+                document.getElementById('cart-total-amount').textContent = '¥0';
+                return;
+            }
+            
+            let html = '';
+            let total = 0;
+            items.forEach(item => {
+                const subtotal = item.product.dealer_price * item.quantity;
+                total += subtotal;
+                html += `
+                    <div class="cart-item">
+                        <div class="cart-item-info">
+                            <strong>${item.product.product_name}</strong><br>
+                            <span style="color:#8c8c8c; font-size:13px;">${item.product.sku_code}</span>
+                        </div>
+                        <div style="text-align:right; margin-right:20px;">
+                            <div style="color:#ff4d4f; font-weight:bold;">¥${item.product.dealer_price.toFixed(2)}</div>
+                            <div style="color:#8c8c8c; font-size:13px;">小计：¥${subtotal.toFixed(2)}</div>
+                        </div>
+                        <div class="cart-item-qty" style="margin-left:20px;">
+                            <button class="qty-btn" onclick="updateCartQty(${item.product.id}, -1)">-</button>
+                            <input class="qty-input" type="number" value="${item.quantity}" min="1" onchange="updateCartQty(${item.product.id}, 0, this.value)">
+                            <button class="qty-btn" onclick="updateCartQty(${item.product.id}, 1)">+</button>
+                        </div>
+                        <button onclick="removeFromCart(${item.product.id})" style="margin-left:15px; color:#ff4d4f; background:none; border:none; cursor:pointer;">🗑️</button>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('cart-items').innerHTML = html;
+            document.getElementById('cart-total-amount').textContent = '¥' + total.toFixed(2);
+        }
+
+        function updateCartQty(productId, change, newValue) {
+            if (!cart[productId]) return;
+            
+            if (newValue !== undefined) {
+                cart[productId].quantity = parseInt(newValue) || 1;
+            } else {
+                cart[productId].quantity += change;
+            }
+            
+            if (cart[productId].quantity <= 0) {
+                delete cart[productId];
+            }
+            
+            updateCartIcon();
+            renderCart();
+        }
+
+        function removeFromCart(productId) {
+            delete cart[productId];
+            document.getElementById(`qty-${productId}`).value = 0;
+            updateQtyInput(productId);
+            renderCart();
+        }
+
+        async function showBankInfo() {
+            if (Object.keys(cart).length === 0) {
+                alert('购物车是空的～');
+                return;
+            }
+            
+            const bankInfo = await fetch(`${API_BASE}/dealer/bank-info`).then(r => r.json());
+            const total = Object.values(cart).reduce((sum, item) => sum + item.product.dealer_price * item.quantity, 0);
+            
+            // 订单号在后端生成，前端只显示预估编号
+            const tempOrderNo = 'ORD' + Date.now().toString().slice(-6);
+            
+            document.getElementById('bank-info-content').innerHTML = `
+                <div class="bank-info-card">
+                    <h3>🏦 对公转账账户</h3>
+                    <div class="bank-info-row"><span class="bank-info-label">公司名称：</span><span class="bank-info-value">${bankInfo.company_name}</span></div>
+                    <div class="bank-info-row"><span class="bank-info-label">银行账号：</span><span class="bank-info-value">${bankInfo.bank_account}</span></div>
+                    <div class="bank-info-row"><span class="bank-info-label">开户行：</span><span class="bank-info-value">${bankInfo.bank_name}</span></div>
+                    <div class="bank-info-row"><span class="bank-info-label">联行号：</span><span class="bank-info-value">${bankInfo.bank_code}</span></div>
+                    <div class="bank-info-row"><span class="bank-info-label">地址：</span><span class="bank-info-value">${bankInfo.address}</span></div>
+                    <div class="bank-info-row"><span class="bank-info-label">税号：</span><span class="bank-info-value">${bankInfo.tax_id}</span></div>
+                    <div class="bank-info-row"><span class="bank-info-label">电话：</span><span class="bank-info-value">${bankInfo.phone}</span></div>
+                </div>
+                <div style="background:#f5f5f5; padding:15px; border-radius:6px; margin-top:15px;">
+                    <strong>📝 订单信息：</strong><br>
+                    <span style="color:#8c8c8c; font-size:13px;">订单号：${tempOrderNo}（提交后生成正式订单号）</span><br>
+                    商品明细：${Object.values(cart).map(i => `${i.product.product_name} ×${i.quantity}`).join('、')}<br>
+                    <strong style="color:#ff4d4f; font-size:20px;">应付总额：¥${total.toFixed(2)}</strong>
+                </div>
+            `;
+            
+            document.getElementById('cart-modal').classList.remove('show');
+            document.getElementById('bank-modal').classList.add('show');
+        }
+
+        function closeBankModal() {
+            document.getElementById('bank-modal').classList.remove('show');
+        }
+
+        async function confirmOrder() {
+            const items = Object.values(cart).map(item => ({
+                product_id: item.product.id,
+                quantity: item.quantity
+            }));
+            
+            try {
+                const res = await fetch(`${API_BASE}/orders/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        dealer_phone: currentPhone,
+                        items: items
+                    })
+                }).then(r => r.json());
+                
+                if (res.status === 'success') {
+                    // 使用后端返回的订单号
+                    const orderNos = res.order_nos || [res.order_no];
+                    const orderNoDisplay = orderNos.length === 1 
+                        ? orderNos[0] 
+                        : `${orderNos[0]} 等${orderNos.length}个订单`;
+                    
+                    alert(`✅ 订单提交成功！\n\n订单号：${orderNoDisplay}\n总金额：¥${res.total}\n商品数量：${res.items_count}款\n\n请尽快完成对公转账并备注订单号，财务核实后发货！`);
+                    cart = {};
+                    updateCartIcon();
+                    closeBankModal();
+                    showTab('orders');
+                } else {
+                    alert(`❌ 下单失败：${res.message || '未知错误'}`);
+                    closeBankModal();
+                }
+            } catch (e) {
+                alert(`❌ 网络错误：${e.message}`);
+                closeBankModal();
+            }
+        }
+
+        async function submitApply() {
+            const data = { company_name: document.getElementById('company-name').value, contact_name: document.getElementById('contact-name').value, contact_phone: document.getElementById('contact-phone').value };
+            await fetch(`${API_BASE}/dealers/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            alert('申请已提交！审核后即可登录');
+        }
+
+        async function checkStatus() {
+            const phone = document.getElementById('login-phone').value;
+            const res = await fetch(`${API_BASE}/dealers/check/${phone}`).then(r => r.json());
+            if(res.status === 'approved') {
+                currentPhone = phone;
+                currentDealer = res;
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('dealer-main').style.display = 'block';
+                document.getElementById('welcome-msg').textContent = `👋 欢迎，${res.company_name}`;
+                loadStats();
+                showTab('dashboard');
+            } else alert('您的账号状态：' + res.status + '\n请联系管理员审核');
+        }
+
+        function logout() { currentPhone = ''; document.getElementById('auth-section').style.display = 'block'; document.getElementById('dealer-main').style.display = 'none'; document.getElementById('login-phone').value = ''; }
+
+        async function loadStats() {
+            const stats = await fetch(`${API_BASE}/dealer/stats/${currentPhone}`).then(r => r.json());
+            document.getElementById('stat-total-orders').textContent = stats.total_orders;
+            document.getElementById('stat-total-amount').textContent = '¥' + stats.total_amount.toLocaleString();
+            document.getElementById('stat-month-orders').textContent = stats.this_month_orders;
+            document.getElementById('stat-pending-orders').textContent = stats.pending_orders;
+            document.getElementById('stat-pending').textContent = stats.pending_orders;
+            document.getElementById('stat-paid').textContent = stats.completed_orders || 0;
+            document.getElementById('stat-shipped').textContent = stats.shipped_orders;
+        }
+
+        async function loadProducts() {
+            const products = await fetch(`${API_BASE}/products/`).then(r => r.json());
+            window.products = products;
+            let html = '';
+            products.forEach(p => {
+                const inCart = cart[p.id] ? cart[p.id].quantity : 0;
+                html += `<tr id="product-row-${p.id}" style="${inCart > 0 ? 'background:#f6ffed' : ''}">
+                    <td>${p.sku_code}</td>
+                    <td>${p.product_name}</td>
+                    <td>${p.category}</td>
+                    <td style='color:#ff4d4f; font-weight:bold'>¥${p.dealer_price.toFixed(2)}</td>
+                    <td>¥${p.retail_price.toFixed(2)}</td>
+                    <td><div class="qty-input-cell"><input type="number" id="qty-${p.id}" value="${inCart}" min="0" onchange="updateQtyInput(${p.id})"></div></td>
+                </tr>`;
+            });
+            document.getElementById('products-body').innerHTML = html;
+            updateCartIcon();
+        }
+
+        async function loadOrders() {
+            const orders = await fetch(`${API_BASE}/dealer/orders/${currentPhone}`).then(r => r.json());
+            let html = '';
+            orders.forEach(o => {
+                const itemsText = o.items.map(i => `${i.product_name} ×${i.quantity}`).join('<br>');
+                let shippingHtml = '-';
+                if (o.shipping_company) {
+                    shippingHtml = `<div class="shipping-info"><strong>${o.shipping_company}</strong><br>单号：${o.tracking_no}<br>发货时间：${new Date(o.shipping_time).toLocaleString('zh-CN')}</div>`;
+                }
+                html += `<tr>
+                    <td>${o.order_no || 'ORD'+o.id.toString().padStart(5,'0')}</td>
+                    <td>${new Date(o.created_at).toLocaleString('zh-CN')}</td>
+                    <td>${itemsText}</td>
+                    <td>¥${o.total_amount.toFixed(2)}</td>
+                    <td><span class="status-badge status-${o.status}">${o.status}</span></td>
+                    <td>${shippingHtml}</td>
+                </tr>`;
+            });
+            document.getElementById('orders-body').innerHTML = html;
+        }
+
+        async function loadProfile() {
+            const profile = await fetch(`${API_BASE}/dealer/profile?phone=${currentPhone}`).then(r => r.json());
+            document.getElementById('profile-company').value = profile.company_name || '';
+            document.getElementById('profile-contact').value = profile.contact_name || '';
+            document.getElementById('profile-phone').value = profile.contact_phone || '';
+            document.getElementById('profile-tax-id').value = profile.tax_id || '';
+            document.getElementById('profile-invoice-title').value = profile.invoice_title || '';
+            document.getElementById('profile-license').value = profile.business_license || '';
+            document.getElementById('profile-invoice-addr').value = profile.invoice_address || '';
+            document.getElementById('profile-shipping-addr').value = profile.shipping_address || '';
+            document.getElementById('profile-shipping-contact').value = profile.shipping_contact || '';
+            document.getElementById('profile-shipping-phone').value = profile.shipping_phone || '';
+        }
+
+        async function saveProfile(event) {
+            event.preventDefault();
+            const data = { company_name: document.getElementById('profile-company').value, contact_name: document.getElementById('profile-contact').value, contact_phone: currentPhone, tax_id: document.getElementById('profile-tax-id').value, invoice_title: document.getElementById('profile-invoice-title').value, business_license: document.getElementById('profile-license').value, invoice_address: document.getElementById('profile-invoice-addr').value, shipping_address: document.getElementById('profile-shipping-addr').value, shipping_contact: document.getElementById('profile-shipping-contact').value, shipping_phone: document.getElementById('profile-shipping-phone').value };
+            await fetch(`${API_BASE}/dealer/profile?phone=${currentPhone}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            alert('✅ 信息已保存！');
+        }
+
+        loadProducts();
+    </script>
+</body>
+</html>
