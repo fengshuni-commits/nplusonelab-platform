@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "N+1 LAB 采购助手 v7.2",
-  "version": "7.2",
+  "name": "N+1 LAB 采购助手 v7.4",
+  "version": "7.4",
   "description": "人机协作版：Shuni 点击验证 + 插件自动填数量 + 循环处理",
   "permissions": [
     "tabs",
@@ -27,21 +27,11 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "N+1 LAB 采购助手",
-    "default_icon": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
-  },
-  "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
+    "default_title": "N+1 LAB 采购助手"
   },
   "web_accessible_resources": [
     {
-      "resources": ["*.png", "*.html"],
+      "resources": ["*.png", "*.html", "*.svg"],
       "matches": ["<all_urls>"]
     }
   ]
