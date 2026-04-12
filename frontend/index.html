@@ -565,7 +565,7 @@
         let currentBOM = [];
         let currentSortField = 'sku_code';  // 当前排序字段
         let currentSortOrder = 'asc';  // 当前排序顺序:asc 升序,desc 降序
-        // allProducts 已在上方声明（全局产品缓存）
+        // allProducts 已在上方声明(全局产品缓存)
 
         // 页面加载时检查登录状态
         window.addEventListener('DOMContentLoaded', () => {
@@ -1522,7 +1522,7 @@
                             <td>${o.created_at ? o.created_at.split('T')[0] : '-'}</td>
                             <td>
                                 <button class="btn" onclick="viewOrderDetail(${o.id})" style="padding:4px 10px; font-size:12px;">👁️ 详情</button>
-                                <button class="btn btn-success" onclick="orderParts(${o.id}, ${o.product_id || 'null'}, '${o.order_type}')" style="padding:4px 10px; font-size:12px; background:#52c41a; color:white; border:none;">🛒 零部件下单</button>
+                                <button class="btn btn-success" onclick="orderParts(${o.id}, ${o.product_id === null || o.product_id === undefined || o.product_id === '' ? 'null' : o.product_id}, '${o.order_type}')" style="padding:4px 10px; font-size:12px; background:#52c41a; color:white; border:none;">🛒 零部件下单</button>
                                 <button class="btn" onclick="updateOrderStatus(${o.id})" style="padding:4px 10px; font-size:12px;">✏️ 状态</button>
                             </td>
                         </tr>
@@ -1628,7 +1628,7 @@
             const productSelect = document.getElementById('order-product');
             const quantity = parseInt(document.getElementById('order-quantity').value) || 1;
             const remark = document.getElementById('order-remark').value.trim();
-            
+
             // 验证
             if (!customer) {
                 alert('❌ 请输入客户名称');
@@ -1638,7 +1638,7 @@
                 alert('❌ 请选择产品');
                 return;
             }
-            
+
             const selectedOption = productSelect.options[productSelect.selectedIndex];
             const productId = parseInt(productSelect.value);
             const productSku = selectedOption.dataset.sku;
@@ -1648,7 +1648,7 @@
             const actualDiscount = isNaN(discount) ? 100 : discount;
             const discountedPrice = (basePrice * actualDiscount) / 100;
             const totalAmount = discountedPrice * quantity;
-            
+
             try {
                 const response = await fetch(`${API_BASE}/orders/`, {
                     method: 'POST',
@@ -1668,36 +1668,86 @@
                         remark: remark
                     })
                 });
-                
+
                 const result = await response.json();
                 if (result.status === 'success') {
-                    alert(`✅ 订单创建成功！\n订单号：${result.order_no}\n总金额：￥${result.total.toFixed(2)}`);
+                    alert(`✅ 订单创建成功!\n订单号:${result.order_no}\n总金额:¥${result.total.toFixed(2)}`);
                     closeCreateOrderModal();
                     if (typeof loadOrders === 'function') loadOrders();
                 } else {
-                    alert('❌ 创建失败：' + result.message);
+                    alert('❌ 创建失败:' + result.message);
                 }
             } catch (e) {
                 console.error('创建订单失败:', e);
-                alert('❌ 创建订单失败：' + e.message);
+                alert('❌ 创建订单失败:' + e.message);
             }
         }
 
 
         // 零部件下单 - 根据订单 BOM 生成采购清单并调用插件
-async function orderParts(orderId, productId, orderType) {
+        async function orderParts(orderId, productId, orderType) {
+            console.log('🦐 orderParts 被调用:', { orderId, productId, orderType });
+            
             try {
                 // 获取订单详情
-                const orderData = await fetch(`${API_BASE}/orders/${orderId}`, {
+                const orderResp = await fetch(`${API_BASE}/orders/${orderId}`, {
                     headers: { 'X-API-Key': 'n1lab2026' }
-                }).then(r => r.json());
-
+                });
+                
+                console.log('🦐 API 响应状态:', orderResp.status);
+                
+                const orderData = await orderResp.json();
+                
+                console.log('🦐 orderData 结构:', Object.keys(orderData));
+                console.log('🦐 orderData.order:', orderData.order ? '存在' : '不存在');
+                console.log('🦐 orderData.items:', orderData.items ? `有${orderData.items.length}个` : '不存在');
+                
                 const order = orderData.order;
-                const orderBomItems = orderData.items || [];
+                let orderBomItems = orderData.items || [];
+                
+                console.log('🦐 orderBomItems 长度:', orderBomItems.length);
+                if (orderBomItems.length > 0) {
+                    console.log('🦐 第一个零件:', orderBomItems[0]);
+                }
 
                 if (orderBomItems.length === 0) {
-                    alert('⚠️ 该订单没有 BOM 零件清单,无法采购');
-                    return;
+                    console.warn('⚠️ 订单没有零件清单，尝试从产品 BOM 动态复制...');
+                    
+                    // 动态从产品 BOM 复制零件到订单
+                    if (!productId || productId === 'null' || productId === 'undefined') {
+                        alert('❌ 订单没有关联产品，无法复制 BOM');
+                        return;
+                    }
+                    
+                    // 获取产品 BOM
+                    const bomResp = await fetch(`${API_BASE}/products/${productId}/bom`, {
+                        headers: { 'X-API-Key': 'n1lab2026' }
+                    });
+                    
+                    if (!bomResp.ok) {
+                        alert('❌ 产品 BOM 数据不存在');
+                        return;
+                    }
+                    
+                    const bomItems = await bomResp.json();
+                    console.log('🦐 产品 BOM 零件数量:', bomItems.length);
+                    
+                    if (bomItems.length === 0) {
+                        alert('⚠️ 产品 BOM 为空，请先配置产品零件清单');
+                        return;
+                    }
+                    
+                    // 使用 BOM 零件作为采购清单
+                    orderBomItems = bomItems.map(item => ({
+                        part_name: item.part_name,
+                        specification: item.specs || '',
+                        quantity: parseFloat(item.quantity) || 1,
+                        unit_price: item.estimated_cost || 0,
+                        total_price: item.total_cost || 0,
+                        taobao_link: item.link || ''
+                    }));
+                    
+                    console.log('✅ 已从产品 BOM 复制', orderBomItems.length, '个零件');
                 }
 
                 // 获取产品原始 BOM(用于显示单个用量)
@@ -1869,7 +1919,7 @@ async function orderParts(orderId, productId, orderType) {
                 action: "N1_START_PURCHASE",
                 items: purchasePayload
             }, "*");
-            
+
             console.log('📦 发送至插件的采购清单:', purchasePayload);
 
             // 提示用户
@@ -2064,7 +2114,7 @@ async function orderParts(orderId, productId, orderType) {
         }
 
         function exportProducts() {
-            alert('功能开发中，敬请期待！');
+            alert('功能开发中,敬请期待!');
         }
 
         function logout() {
