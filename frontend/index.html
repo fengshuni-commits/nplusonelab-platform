@@ -865,15 +865,13 @@
             const totalQty = purchaseItems.reduce((sum, item) => sum + item.quantity, 0);
 
             if (confirm(`准备批量采购订单 #${orderId} 的零件:\n\n零件种类:${purchaseItems.length} 种\n零件总数:${totalQty} 个\n\n点击确定后,将依次打开淘宝页面,请在每个页面点击【加入购物车】按钮。`)) {
-                // 发送队列到 Chrome 插件
-                const first = purchaseItems[0];
-                const connector = first.link.includes('?') ? '&' : '?';
-                const partsParam = encodeURIComponent(JSON.stringify(purchaseItems));
-                const purchaseUrl = `${first.link}${connector}n1_qty=${first.quantity}&n1_auto_add=1&n1_parts=${partsParam}`;
+                // 向系统层发送 v7.4/v7.5 版本的采购 postMessage
+                window.postMessage({
+                    action: "N1_START_PURCHASE",
+                    items: purchaseItems
+                }, "*");
 
-                window.open(purchaseUrl, '_blank');
-
-                alert('✅ 采购指令已下达!\n\n插件将自动打开淘宝页面,请在每个页面点击【加入购物车】按钮。\n\n提示:数量已自动计算为订单所需的零件总数。');
+                alert('✅ 采购指令已下达!\n\n插件将自动打开淘宝页面,请在每个加购页面操作。');
             }
         }
 
@@ -896,13 +894,13 @@
                     if (qty <= 0) qty = 1;
 
                     const baseLink = (item.link || '').trim();
-                    let fullLink = '';
+                    let cleanLink = '';
                     if (baseLink) {
-                        const separator = baseLink.includes('?') ? '&' : '?';
-                        fullLink = `${baseLink}${separator}n1_qty=${qty}&n1_auto_add=1`;
+                        cleanLink = baseLink.split('#')[0].split('?')[0]; // Simplify for basic clicks or keep original without n1_qty
                     }
 
-                    const linkDisplay = fullLink ? `<a href="${fullLink}" target="_blank" style="color:#1890ff;text-decoration:none;font-weight:bold;">${item.part_name}</a>` : item.part_name;
+                    // For the individual BOM items view, provide a single-item postMessage trigger
+                    const linkDisplay = baseLink ? `<a href="#" onclick="window.postMessage({action:'N1_START_PURCHASE', items:[{link:'${baseLink}', quantity:${qty}}]}, '*'); return false;" style="color:#1890ff;text-decoration:none;font-weight:bold;">${item.part_name}</a>` : item.part_name;
                     tr.innerHTML = `<td>${linkDisplay}</td><td>${item.specs || '-'}</td><td style="font-weight:bold;color:#f5222d;">${qty} 个</td>`;
                     body.appendChild(tr);
                 });
@@ -1130,15 +1128,11 @@
                 // 1. 显示状态标签
                 document.getElementById('bom-status-tag').style.display = 'block';
 
-                // 2. 发送指令给插件
-                const first = purchaseItems[0];
-                const connector = first.link.includes('?') ? '&' : '?';
-                const partsParam = encodeURIComponent(JSON.stringify(purchaseItems));
-                const purchaseUrl = `${first.link}${connector}n1_qty=${first.quantity}&n1_auto_add=1&n1_parts=${partsParam}`;
-
-                window.open(purchaseUrl, '_blank');
-
-                // 3. 渲染确认界面
+                // 2. 发送指令给插件(v7.4 postMessage 协议)
+                window.postMessage({
+                    action: "N1_START_PURCHASE",
+                    items: purchaseItems
+                }, "*");
                 renderConfirmPurchase(pid, type, qty, unitCost);
             }
         }
@@ -1864,39 +1858,19 @@ async function orderParts(orderId, productId, orderType) {
             // 关闭弹窗
             closeOrderPartsModal();
 
-            // 构建采购插件 URL 参数
-            const partsParam = encodeURIComponent(JSON.stringify(partsList.map(p => ({
+            // 构建采购请求
+            const purchasePayload = partsList.map(p => ({
                 link: p.link,
                 quantity: p.quantity
-            }))));
+            }));
 
-            // 打开第一个零件的淘宝链接,附带采购清单参数
-            const firstPart = partsList.find(p => p.link && p.link.includes('item.htm'));
-            if (!firstPart) {
-                alert('❌ 未找到有效的淘宝链接,请检查 BOM 数据');
-                return;
-            }
-
-            // 使用采购插件的协议打开页面
-            // 模拟产品中心 BOM 链接的成功模式:使用原生超链接点击,避免脚本拦截
-            let cleanLink = firstPart.link.split('#')[0];
-            const connector = cleanLink.includes('?') ? '&' : '?';
-
-            // 构造参数,参考产品中心成功模式:
-            // 1. 显式加上 n1_qty(当前零件数量)
-            // 2. n1_auto_add=1 激活插件自动化
-            // 3. n1_parts 携带剩余清单实现"连续采购"
-            const purchaseUrl = `${cleanLink}${connector}n1_qty=${firstPart.quantity}&n1_auto_add=1&n1_order_id=${orderId}&n1_parts=${partsParam}`;
-
-            console.log('采购跳转链接:', purchaseUrl);
-
-            // 创建隐藏的原生 <a> 标签并触发点击,这是最稳定的跳转方式
-            const link = document.createElement('a');
-            link.href = purchaseUrl;
-            link.target = '_blank';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // 使用最新的 v7.4/v7.5 postMessage 协议来与 Chrome 插件通讯激活批量自动化采购
+            window.postMessage({
+                action: "N1_START_PURCHASE",
+                items: purchasePayload
+            }, "*");
+            
+            console.log('📦 发送至插件的采购清单:', purchasePayload);
 
             // 提示用户
             setTimeout(() => {
