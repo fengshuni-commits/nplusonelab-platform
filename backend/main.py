@@ -959,13 +959,18 @@ def get_dashboard_stats(
     """获取数据看板统计数据（支持时间筛选）"""
     
     # 构建时间筛选条件
+    # time_filter: 用于单表查询（orders 单表、purchases 单表）
+    # time_filter_aliased: 用于 JOIN 查询（需要 o. 前缀消除歧义）
     time_filter = ""
+    time_filter_aliased = ""
     params = {}
     if start_date:
         time_filter += " AND DATE(created_at) >= DATE(:start_date)"
+        time_filter_aliased += " AND DATE(o.created_at) >= DATE(:start_date)"
         params["start_date"] = start_date
     if end_date:
         time_filter += " AND DATE(created_at) <= DATE(:end_date)"
+        time_filter_aliased += " AND DATE(o.created_at) <= DATE(:end_date)"
         params["end_date"] = end_date
     
     # 订单统计
@@ -1013,7 +1018,7 @@ def get_dashboard_stats(
     for row in status_stats:
         status_breakdown[row[0]] = {"count": row[1] or 0, "amount": row[2] or 0}
     
-    # 按产品类别统计
+    # 按产品类别统计（JOIN 查询需用 time_filter_aliased 消除歧义）
     category_stats = db.execute(text(f"""
         SELECT 
             p.category,
@@ -1024,7 +1029,7 @@ def get_dashboard_stats(
         FROM orders o
         LEFT JOIN products p ON o.product_id = p.id
         WHERE o.status != 'cancelled'
-        {time_filter}
+        {time_filter_aliased}
         GROUP BY p.category
         ORDER BY total_amount DESC
     """), params).fetchall()
