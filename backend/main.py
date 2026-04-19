@@ -980,18 +980,22 @@ def get_dashboard_stats(
         {time_filter}
     """), params).fetchone()
     
-    # 库存采购统计（从 purchase_history 表）
-    inventory_stats = db.execute(text(f"""
-        SELECT 
-            SUM(actual_cost * quantity) as total_inventory_cost
-        FROM purchase_history
-        WHERE 1=1
-        {time_filter}
-    """), params).fetchone()
+    # 库存采购统计（从 purchases 表）
+    try:
+        inventory_stats = db.execute(text(f"""
+            SELECT 
+                SUM(actual_cost * quantity) as total_inventory_cost
+            FROM purchases
+            WHERE 1=1
+            {time_filter}
+        """), params).fetchone()
+        inventory_cost = inventory_stats[0] or 0 if inventory_stats else 0
+    except Exception:
+        inventory_cost = 0
     
     # 计算总采购成本（订单采购 + 库存采购）
-    total_procurement = (order_stats[2] or 0) + (inventory_stats[0] or 0)
-    total_profit = (order_stats[3] or 0) - (inventory_stats[0] or 0)
+    total_procurement = (order_stats[2] or 0) + inventory_cost
+    total_profit = (order_stats[3] or 0) - inventory_cost
     
     # 按状态统计订单
     status_stats = db.execute(text(f"""
@@ -1045,7 +1049,7 @@ def get_dashboard_stats(
         },
         "status_breakdown": status_breakdown,
         "category_breakdown": category_breakdown,
-        "inventory_cost": round(inventory_stats[0] or 0, 2),
+        "inventory_cost": round(inventory_cost, 2),
         "order_procurement_cost": round(order_stats[2] or 0, 2),
         "time_range": {
             "start_date": start_date,
@@ -1072,7 +1076,7 @@ def record_purchase(
 
     # 1. 记录采购历史
     db.execute(text("""
-        INSERT INTO purchase_history (
+        INSERT INTO purchases (
             product_id, purchase_type, quantity, bom_cost, actual_cost, user_id
         ) VALUES (
             :product_id, :purchase_type, :quantity, :bom_cost, :actual_cost, :user_id
