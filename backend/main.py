@@ -947,6 +947,112 @@ def get_user_stats(db: Session = Depends(get_db), auth=Depends(verify_auth)):
         "today_active": stats[3] or 0
     }
 
+# ==================== 数据看板 API ====================
+
+@app.get("/dashboard/stats")
+def get_dashboard_stats(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    """获取数据看板统计数据（支持时间筛选）"""
+    
+    # 构建时间筛选条件
+    time_filter = ""
+    params = {}
+    if start_date:
+        time_filter += " AND DATE(created_at) >= DATE(:start_date)"
+        params["start_date"] = start_date
+    if end_date:
+        time_filter += " AND DATE(created_at) <= DATE(:end_date)"
+        params["end_date"] = end_date
+    
+    # 订单统计
+    order_stats = db.execute(text(f"""
+        SELECT 
+            COUNT(*) as total_orders,
+            SUM(total_amount) as total_amount,
+            SUM(procurement_cost) as total_procurement_cost,
+            SUM(total_amount - procurement_cost) as total_profit
+        FROM orders
+        WHERE status != 'cancelled'
+        {time_filter}
+    """), params).fetchone()
+    
+    # 库存采购统计（从 purchase_history 表）
+    inventory_stats = db.execute(text(f"""
+        SELECT 
+            SUM(actual_cost * quantity) as total_inventory_cost
+        FROM purchase_history
+        WHERE 1=1
+        {time_filter}
+    """), params).fetchone()
+    
+    # 计算总采购成本（订单采购 + 库存采购）
+    total_procurement = (order_stats[2] or 0) + (inventory_stats[0] or 0)
+    total_profit = (order_stats[3] or 0) - (inventory_stats[0] or 0)
+    
+    # 按状态统计订单
+    status_stats = db.execute(text(f"""
+        SELECT 
+            status,
+            COUNT(*) as count,
+            SUM(total_amount) as amount
+        FROM orders
+        WHERE 1=1
+        {time_filter}
+        GROUP BY status
+    """), params).fetchall()
+    
+    status_breakdown = {}
+    for row in status_stats:
+        status_breakdown[row[0]] = {"count": row[1] or 0, "amount": row[2] or 0}
+    
+    # 按产品类别统计
+    category_stats = db.execute(text(f"""
+        SELECT 
+            p.category,
+            COUNT(o.id) as order_count,
+            SUM(o.total_amount) as total_amount,
+            SUM(o.procurement_cost) as total_cost,
+            SUM(o.total_amount - o.procurement_cost) as total_profit
+        FROM orders o
+        LEFT JOIN products p ON o.product_id = p.id
+        WHERE o.status != 'cancelled'
+        {time_filter}
+        GROUP BY p.category
+        ORDER BY total_amount DESC
+    """), params).fetchall()
+    
+    category_breakdown = []
+    for row in category_stats:
+        category_breakdown.append({
+            "category": row[0] or "未分类",
+            "order_count": row[1] or 0,
+            "total_amount": row[2] or 0,
+            "total_cost": row[3] or 0,
+            "total_profit": row[4] or 0
+        })
+    
+    return {
+        "summary": {
+            "total_orders": order_stats[0] or 0,
+            "total_amount": round(order_stats[1] or 0, 2),
+            "total_procurement_cost": round(total_procurement, 2),
+            "total_profit": round(total_profit, 2),
+            "profit_margin": round((total_profit / (order_stats[1] or 1)) * 100, 2)
+        },
+        "status_breakdown": status_breakdown,
+        "category_breakdown": category_breakdown,
+        "inventory_cost": round(inventory_stats[0] or 0, 2),
+        "order_procurement_cost": round(order_stats[2] or 0, 2),
+        "time_range": {
+            "start_date": start_date,
+            "end_date": end_date
+        }
+    }
+
 # ==================== 采购管理 API ====================
 
 @app.post("/admin/purchases")
