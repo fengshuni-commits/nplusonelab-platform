@@ -190,7 +190,9 @@
     </div>
     
     <script>
-        const API_BASE = 'http://43.156.225.39:8080';
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:8080' 
+            : window.location.origin;
         
         // 检查是否已登录
         const savedUser = localStorage.getItem('n1_current_user');
