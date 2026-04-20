@@ -137,6 +137,21 @@ class OrderCreate(BaseModel):
     dealer_phone: str
     items: List[OrderItemCreate]
 
+class BatchOrderItem(BaseModel):
+    product_id: int
+    product_sku: str
+    product_name: str
+    quantity: int
+    unit_price: float
+    total_amount: float
+    remark: Optional[str] = ""
+
+class BatchOrderCreate(BaseModel):
+    customer_name: str
+    customer_contact: Optional[str] = ""
+    order_type: str = "complete"
+    items: List[BatchOrderItem]
+
 # ==================== 安全验证 ====================
 async def verify_auth(x_api_key: Optional[str] = Header(None)):
     if x_api_key != SECRET_PASSWORD:
@@ -240,6 +255,61 @@ def check_dealer(phone: str, db: Session = Depends(get_db)):
     d = db.query(Dealer).filter(Dealer.contact_phone == phone).first()
     if not d: raise HTTPException(status_code=404)
     return {"status": d.status, "company_name": d.company_name, "id": d.id}
+
+# --- 核心：批量下单接口（支持一次性创建多个 SKU，拆分为独立订单行） ---
+@app.post("/orders/batch-create")
+def batch_create_orders(
+    batch_data: BatchOrderCreate,
+    db: Session = Depends(get_db)
+):
+    """批量创建订单，每个 SKU 拆分为独立的 Order 记录，共享同一母单号前缀"""
+    import datetime
+    import random
+    import string
+
+    if not batch_data.customer_name:
+        raise HTTPException(status_code=400, detail="客户姓名不能为空")
+    
+    if not batch_data.items:
+        raise HTTPException(status_code=400, detail="至少需要选择一个产品")
+
+    # 生成一个公共的主订单号前缀，如 ORD2026041912304567
+    base_order_no = "ORD" + datetime.datetime.now().strftime("%Y%m%d%H%M") + ''.join(random.choices(string.digits, k=4))
+    
+    created_orders = []
+    
+    for idx, item in enumerate(batch_data.items):
+        # 如果有多个商品，追加后缀
+        order_no = base_order_no if len(batch_data.items) == 1 else f"{base_order_no}-{idx+1:02d}"
+        
+        cursor = db.execute(text("""
+            INSERT INTO orders (
+                order_no, customer_name, customer_contact, order_type,
+                product_id, product_sku, product_name, quantity,
+                unit_price, total_amount, status, remark, created_by
+            ) VALUES (
+                :order_no, :customer_name, :customer_contact, :order_type,
+                :product_id, :product_sku, :product_name, :quantity,
+                :unit_price, :total_amount, 'pending', :remark, :created_by
+            )
+        """), {
+            "order_no": order_no,
+            "customer_name": batch_data.customer_name,
+            "customer_contact": batch_data.customer_contact,
+            "order_type": batch_data.order_type,
+            "product_id": item.product_id,
+            "product_sku": item.product_sku,
+            "product_name": item.product_name,
+            "quantity": item.quantity,
+            "unit_price": item.unit_price,
+            "total_amount": item.total_amount,
+            "remark": item.remark,
+            "created_by": 1 # 默认管理员
+        })
+        created_orders.append({"order_no": order_no, "product_id": item.product_id})
+
+    db.commit()
+    return {"status": "success", "message": f"成功创建 {len(created_orders)} 笔订单", "orders": created_orders}
 
 # --- 核心：下单接口（兼容旧版 index.html，单产品格式） ---
 @app.post("/orders/")
