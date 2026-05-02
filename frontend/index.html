@@ -1992,7 +1992,7 @@
         }
 
 
-        // 零部件下单 - 根据订单 BOM 生成采购清单并调用插件
+        // 零部件下单 - 根据订单采购清单生成采购队列
         async function orderParts(orderId, productId, orderType) {
             console.log('🦐 orderParts 被调用:', { orderId, productId, orderType });
 
@@ -2005,23 +2005,27 @@
                 console.log('🦐 API 响应状态:', orderResp.status);
 
                 const orderData = await orderResp.json();
-
-                console.log('🦐 orderData 结构:', Object.keys(orderData));
-                console.log('🦐 orderData.order:', orderData.order ? '存在' : '不存在');
-                console.log('🦐 orderData.items:', orderData.items ? `有${orderData.items.length}个` : '不存在');
-
                 const order = orderData.order;
-                let orderBomItems = orderData.items || [];
+                const orderQuantity = order.quantity || 1;
+                console.log('🦐 订单数量:', orderQuantity);
 
-                console.log('🦐 orderBomItems 长度:', orderBomItems.length);
-                if (orderBomItems.length > 0) {
-                    console.log('🦐 第一个零件:', orderBomItems[0]);
-                }
+                // 尝试获取订单采购清单
+                let orderBomItems = [];
+                try {
+                    const procResp = await fetch(`${API_BASE}/admin/orders/${orderId}/procurement-list`, {
+                        headers: { 'X-API-Key': 'n1lab2026' }
+                    });
+                    if (procResp.ok) {
+                        const procData = await procResp.json();
+                        orderBomItems = procData.items || [];
+                        console.log('🦐 采购清单零件数:', orderBomItems.length);
+                    }
+                } catch (e) { console.warn('获取采购清单失败:', e); }
 
+                // 如果采购清单为空,从产品 BOM 动态复制
                 if (orderBomItems.length === 0) {
-                    console.warn('⚠️ 订单没有零件清单,尝试从产品 BOM 动态复制...');
+                    console.warn('⚠️ 采购清单为空,尝试从产品 BOM 复制...');
 
-                    // 动态从产品 BOM 复制零件到订单
                     if (!productId || productId === 'null' || productId === 'undefined') {
                         alert('❌ 订单没有关联产品,无法复制 BOM');
                         return;
@@ -2077,7 +2081,7 @@
                 // 构建采购清单数据
                 const orderQuantity = order.quantity || 1;
                 const partsList = orderBomItems
-                    .filter(item => item.part_name && item.taobao_link && item.taobao_link.includes('item.htm'))
+                    .filter(item => item.part_name && item.taobao_link && (item.taobao_link.includes('item.htm') || item.taobao_link.includes('tmall.com')))
                     .map((item, index) => {
                         // 从原始 BOM 查找单个用量和采购基数
                         const origItem = originalBom.find(b => b.part_name === item.part_name);
