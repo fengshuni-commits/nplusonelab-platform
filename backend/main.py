@@ -189,6 +189,104 @@ def ensure_bom_version_tables():
 
 ensure_bom_version_tables()
 
+def ensure_additional_tables():
+    """确保所有业务表存在（用户、日志、采购等）"""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                status TEXT DEFAULT 'active',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_login DATETIME,
+                purchase_count INTEGER DEFAULT 0
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                action TEXT,
+                detail TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS order_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER,
+                action TEXT,
+                old_status TEXT,
+                new_status TEXT,
+                detail TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS procurement_lists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER,
+                part_name TEXT,
+                specs TEXT,
+                quantity REAL DEFAULT 0,
+                unit_cost REAL DEFAULT 0,
+                total_cost REAL DEFAULT 0,
+                taobao_link TEXT,
+                status TEXT DEFAULT 'pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS purchases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER,
+                purchase_type TEXT,
+                quantity INTEGER DEFAULT 1,
+                bom_cost REAL DEFAULT 0,
+                actual_cost REAL DEFAULT 0,
+                user_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS kit_allocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER,
+                product_id INTEGER,
+                kit_sku TEXT,
+                kit_name TEXT,
+                quantity INTEGER DEFAULT 1,
+                kit_cost REAL DEFAULT 0,
+                total_cost REAL DEFAULT 0,
+                user_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        # 确保已有表的列完整（兼容旧数据库迁移）
+        # 注意：SQLite 的 ALTER TABLE ADD COLUMN 不支持 DEFAULT CURRENT_TIMESTAMP
+        alter_statements = [
+            "ALTER TABLE users ADD COLUMN created_at DATETIME",
+            "ALTER TABLE users ADD COLUMN last_login DATETIME",
+            "ALTER TABLE users ADD COLUMN purchase_count INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active'",
+        ]
+        for stmt in alter_statements:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass  # 列已存在则跳过
+        # 确保默认管理员用户存在
+        import hashlib
+        admin_hash = hashlib.sha256('admin123'.encode()).hexdigest()
+        conn.execute(text("""
+            INSERT OR IGNORE INTO users (username, password_hash, role, status)
+            VALUES ('admin', :hash, 'admin', 'active')
+        """), {"hash": admin_hash})
+
+ensure_additional_tables()
+
 # ==================== Pydantic 模型 ====================
 class ProductSchema(BaseModel):
     sku_code: str
@@ -889,7 +987,7 @@ def ship_order(order_id: int, shipping_company: str, tracking_no: str, db: Sessi
         raise HTTPException(status_code=404, detail="订单不存在")
     order.shipping_company = shipping_company
     order.tracking_no = tracking_no
-    order.shipping_time = beijing_now()
+    order.shipped_at = beijing_now()
     order.status = 'shipped'
     db.commit()
     return {"status": "success", "message": "已发货"}
@@ -1622,11 +1720,12 @@ def get_order_detail(order_id: int, db: Session = Depends(get_db), auth=Depends(
     if not order:
         raise HTTPException(status_code=404, detail="订单不存在")
     
-    # 订单明细（BOM 零件）
+    # 订单明细（从 order_items 表获取关联产品信息）
     items = db.execute(text("""
-        SELECT part_name, specification, quantity, unit_price, total_price, taobao_link, status
-        FROM order_items
-        WHERE order_id = :order_id
+        SELECT oi.product_id, oi.quantity, oi.price, p.product_name, p.sku_code
+        FROM order_items oi
+        LEFT JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = :order_id
     """), {"order_id": order_id}).fetchall()
     
     return {
@@ -1648,13 +1747,16 @@ def get_order_detail(order_id: int, db: Session = Depends(get_db), auth=Depends(
         },
         "items": [
             {
-                "part_name": item[0],
-                "specification": item[1],
-                "quantity": item[2],
-                "unit_price": item[3],
-                "total_price": item[4],
-                "taobao_link": item[5],
-                "status": item[6]
+                "product_id": item[0],
+                "quantity": item[1],
+                "price": item[2],
+                "product_name": item[3] or "",
+                "part_name": item[3] or "",
+                "specification": item[4] or "",
+                "unit_price": item[2] or 0,
+                "total_price": (item[1] or 0) * (item[2] or 0),
+                "taobao_link": "",
+                "status": "pending"
             }
             for item in items
         ]
@@ -1671,7 +1773,7 @@ def update_order_status(
     new_status = status_data.get("status")
     procurement_cost = status_data.get("procurement_cost", 0)
     
-    if new_status not in ["pending", "prepared", "shipped", "completed", "cancelled"]:
+    if new_status not in ["pending", "processing", "prepared", "shipped", "completed", "cancelled"]:
         raise HTTPException(status_code=400, detail="无效的状态")
     
     # 获取原状态

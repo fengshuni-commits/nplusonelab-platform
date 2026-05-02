@@ -713,9 +713,8 @@
 
     <script>
         // 动态适配本地与服务器部署环境
-        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-            ? 'http://localhost:8000' 
-            : window.location.origin + '/api';
+        // 后端 FastAPI 直接服务页面和 API（无 /api 前缀），所以 API_BASE = origin
+        const API_BASE = window.location.origin;
         let allProducts = []; // 全局产品缓存
         let currentTab = 'dashboard';
         // 从 localStorage 读取当前用户
@@ -889,14 +888,10 @@
         }
 
         async function loadStats() {
+            // 数据看板已改用 loadDashboardStats()，此函数仅作兼容
             try {
-                const orders = await fetch(`${API_BASE}/orders/`, { headers: { 'X-API-Key': 'n1lab2026' } }).then(r => r.json());
-                const dealers = await fetch(`${API_BASE}/dealers/`, { headers: { 'X-API-Key': 'n1lab2026' } }).then(r => r.json());
-                document.getElementById('stat-orders').innerText = orders.length;
-                const total = orders.reduce((sum, o) => sum + o.total_amount, 0);
-                document.getElementById('stat-amount').innerText = `¥${total.toFixed(2)}`;
-                document.getElementById('stat-dealers').innerText = dealers.filter(d => d.status === 'pending').length;
-            } catch (e) {}
+                loadDashboardStats();
+            } catch (e) { console.warn('loadStats fallback:', e); }
         }
         
         // 加载数据看板统计（支持时间筛选）
@@ -1791,32 +1786,7 @@
             }
         }
 
-        // 显示创建订单弹窗
-        async function showCreateOrderModal() {
-            document.getElementById('create-order-modal').style.display = 'block';
-            document.getElementById('modal-mask').style.display = 'flex';
-
-            // 加载产品列表
-            try {
-                allProductsData = await fetch(`${API_BASE}/admin/products/bom-costs`, {
-                    headers: { 'X-API-Key': 'n1lab2026' }
-                }).then(r => r.json());
-
-                const productSelect = document.getElementById('order-product');
-                productSelect.innerHTML = '<option value="">请选择产品</option>';
-
-                allProductsData.forEach(p => {
-                    productSelect.innerHTML += `<option value="${p.id}"
-                        data-sku="${p.sku_code}"
-                        data-name="${p.product_name}"
-                        data-price="${p.dealer_price}"
-                        data-retail-price="${p.retail_price}">${p.sku_code} - ${p.product_name}</option>`;
-                });
-            } catch (e) {
-                console.error('加载产品失败:', e);
-                alert('❌ 加载产品列表失败');
-            }
-        }
+        // 注意: showCreateOrderModal 定义在下方 L1887（多 SKU 版本）
 
         function closeCreateOrderModal() {
             document.getElementById('create-order-modal').style.display = 'none';
@@ -2277,7 +2247,7 @@
         // 渲染确认订单采购的界面
         function renderConfirmOrderPurchase(orderId, orderNo, partsList) {
             let totalEstCost = 0;
-            partsList.forEach(p => { totalEstCost += parseFloat(p.total_cost || 0); });
+            partsList.forEach(p => { totalEstCost += (p.price || 0) * (p.quantity || 0); });
 
             const modalHtml = `
                 <div id="order-cost-mask" style="position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:2999; backdrop-filter:blur(4px);"></div>
@@ -2542,9 +2512,9 @@
         loadStats();
 
         // ==================== BOM 编辑器 ====================
-        let currentEditProductId = null;
+        let currentEditBOMProductId = null;
         async function openBOMEditor(productId, productName) {
-            currentEditProductId = productId;
+            currentEditBOMProductId = productId;
             try {
                 const resp = await fetch(`${API_BASE}/admin/products/${productId}/bom-editor`, { headers: { 'X-API-Key': 'n1lab2026' } });
                 const data = await resp.json();
@@ -2598,20 +2568,54 @@
                     link: inputs[6].value
                 };
             });
-            try {
-                const resp = await fetch(`${API_BASE}/admin/products/${currentEditProductId}/bom-editor`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-API-Key': 'n1lab2026' },
-                    body: JSON.stringify({ items, note: 'BOM编辑保存' })
-                });
-                const data = await resp.json();
-                if (resp.ok) {
-                    alert('✅ BOM 保存成功！已创建新版本');
-                    document.getElementById('bom-modal').style.display = 'none';
-                    document.getElementById('modal-mask').style.display = 'none';
-                    loadProducts();
-                } else { alert(data.detail || '保存失败'); }
-            } catch (e) { alert('保存失败: ' + e.message); }
+
+            // 判断当前是 BOM 编辑还是采购清单编辑
+            if (currentEditOrderId) {
+                // 采购清单编辑 - 调用订单采购清单端点
+                const procItems = items.map(i => ({
+                    part_name: i.part_name,
+                    specs: i.specs,
+                    quantity: parseFloat(i.quantity) || 0,
+                    unit_cost: i.estimated_cost,
+                    total_cost: i.total_cost,
+                    taobao_link: i.link,
+                    status: 'pending'
+                }));
+                try {
+                    const resp = await fetch(`${API_BASE}/admin/orders/${currentEditOrderId}/procurement-editor`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'n1lab2026' },
+                        body: JSON.stringify({ items: procItems, note: '采购清单编辑保存' })
+                    });
+                    const data = await resp.json();
+                    if (resp.ok) {
+                        alert('✅ 采购清单保存成功！');
+                        document.getElementById('bom-modal').style.display = 'none';
+                        document.getElementById('modal-mask').style.display = 'none';
+                        currentEditOrderId = null;
+                        loadOrders();
+                    } else { alert(data.detail || '保存失败'); }
+                } catch (e) { alert('保存失败: ' + e.message); }
+            } else if (currentEditBOMProductId) {
+                // BOM 编辑 - 调用产品 BOM 端点
+                try {
+                    const resp = await fetch(`${API_BASE}/admin/products/${currentEditBOMProductId}/bom-editor`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'n1lab2026' },
+                        body: JSON.stringify({ items, note: 'BOM编辑保存' })
+                    });
+                    const data = await resp.json();
+                    if (resp.ok) {
+                        alert('✅ BOM 保存成功！已创建新版本');
+                        document.getElementById('bom-modal').style.display = 'none';
+                        document.getElementById('modal-mask').style.display = 'none';
+                        currentEditBOMProductId = null;
+                        loadProducts();
+                    } else { alert(data.detail || '保存失败'); }
+                } catch (e) { alert('保存失败: ' + e.message); }
+            } else {
+                alert('❌ 未知的编辑目标');
+            }
         }
 
         // ==================== 订单采购清单编辑器 ====================
