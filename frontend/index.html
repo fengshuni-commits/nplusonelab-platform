@@ -865,6 +865,14 @@
         }
 
         function switchTab(tabId, el) {
+            // 兼容处理：如果 el 未传递，自动查找对应的 nav-item
+            if (!el) {
+                el = document.querySelector(`.nav-item[onclick*="'${tabId}'"]`);
+                if (!el) {
+                    console.error('switchTab: 未找到 tabId=' + tabId + ' 对应的导航项');
+                    return;
+                }
+            }
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             el.classList.add('active');
 
