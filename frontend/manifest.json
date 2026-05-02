@@ -16,6 +16,7 @@
       "matches": [
         "https://*.taobao.com/*",
         "https://*.tmall.com/*",
+        "https://platform.nplusonelab.com/*",
         "http://43.156.225.39:8080/*",
         "http://localhost:8080/*",
         "http://43.156.225.39:8000/*",

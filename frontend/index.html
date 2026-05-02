@@ -497,7 +497,7 @@
                 </ul>
             </div>
             <div style="margin-top:25px; display:flex; gap:10px; border-top:2px solid #f0f0f0; padding-top:20px;">
-                <button onclick="downloadPlugin()" class="btn btn-success" style="flex:1; padding:12px; font-size:16px;">📥 下载插件 (v7.4 最终版)</button>
+                <button onclick="downloadPlugin()" class="btn btn-success" style="flex:1; padding:12px; font-size:16px;">📥 下载插件 (v7.3 修复版)</button>
                 <button onclick="closePluginModal()" class="btn" style="flex:1; padding:12px;">关闭</button>
             </div>
         </div>
@@ -776,12 +776,118 @@
             document.getElementById('view-products').style.display = 'none';
             document.getElementById('view-dealers').style.display = 'none';
             document.getElementById('view-users').style.display = 'none';
+            // ==================== 采购查询功能 ====================
+        async function loadProcurementQuery() {
+            const search = document.getElementById('proc-search').value;
+            const startDate = document.getElementById('proc-start-date').value;
+            const endDate = document.getElementById('proc-end-date').value;
 
-            document.getElementById('view-' + tabId).style.display = 'block';
+            let url = `${API_BASE}/admin/orders/procurement-query?`;
+            if (search) url += `search=${encodeURIComponent(search)}&`;
+            if (startDate) url += `start_date=${startDate}&`;
+            if (endDate) url += `end_date=${endDate}&`;
 
-            // 获取菜单文本(兼容折叠状态)
-            const navText = el.querySelector('.nav-text');
-            document.getElementById('page-title').innerText = navText ? navText.innerText : el.innerText.trim();
+            try {
+                const resp = await fetch(url, { headers: { 'X-API-Key': 'n1lab2026' } });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    alert(data.detail || '查询失败');
+                    return;
+                }
+
+                // 更新统计卡片
+                document.getElementById('proc-stat-orders').innerText = data.summary.total_orders;
+                document.getElementById('proc-stat-revenue').innerText = `¥${data.summary.total_revenue.toLocaleString('zh-CN', {minimumFractionDigits: 2})}`;
+                document.getElementById('proc-stat-cost').innerText = `¥${data.summary.total_procurement.toLocaleString('zh-CN', {minimumFractionDigits: 2})}`;
+                document.getElementById('proc-stat-parts').innerText = data.summary.total_parts;
+
+                // 渲染订单表格
+                const tbody = document.getElementById('procurement-query-body');
+                if (data.orders.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:40px; color:#8c8c8c;">无匹配的订单数据</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.orders.map(o => {
+                    const profit = (o.total_amount - o.procurement_cost).toFixed(2);
+                    const profitColor = profit >= 0 ? '#52c41a' : '#ff4d4f';
+                    const statusMap = { pending: '✅待处理', prepared: '📦已备货', shipped: '🚚已发货', completed: '✅已完成', cancelled: '❌已取消' };
+                    const statusLabel = statusMap[o.status] || o.status;
+                    return `<tr>
+                        <td style="font-weight:bold; color:#1890ff;">${o.order_no}</td>
+                        <td>${o.product_name}</td>
+                        <td>${o.customer_name}</td>
+                        <td>${o.quantity}</td>
+                        <td>¥${(o.total_amount || 0).toFixed(2)}</td>
+                        <td style="color:#fa8c16; font-weight:bold;">¥${(o.procurement_cost || 0).toFixed(2)}</td>
+                        <td style="color:${profitColor}; font-weight:bold;">¥${profit}</td>
+                        <td>${o.parts_count > 0 ? '<span style="background:#e6f7ff; color:#1890ff; padding:2px 8px; border-radius:4px;">' + o.parts_count + ' 个</span>' : '<span style="color:#8c8c8c;">未拆解</span>'}</td>
+                        <td>${statusLabel}</td>
+                        <td>${o.parts_count > 0 ? '<button class="btn" onclick="showProcurementDetail(' + o.order_id + ', \'' + o.order_no + '\')" style="padding:4px 10px; font-size:12px; background:#1890ff; color:white; border:none;">🔍 查看明细</button>' : '<span style="color:#8c8c8c; font-size:12px;">无数据</span>'}</td>
+                    </tr>`;
+                }).join('');
+
+                // 隐藏明细面板
+                document.getElementById('procurement-detail-panel').style.display = 'none';
+            } catch (e) {
+                alert('查询失败: ' + e.message);
+            }
+        }
+
+        function showProcurementDetail(orderId, orderNo) {
+            // 从已加载的数据中找到对应订单的零部件明细  (假设数据已加载到全局变量或可访问)
+            // 如果需要重新请求API，则需要集成到 loadProcurementQuery 的结果中
+            fetch(`${API_BASE}/admin/orders/${orderId}/procurement-list`, { headers: { 'X-API-Key': 'n1lab2026' } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('procurement-detail-title').innerText = `🔧 零部件明细 - 订单 ${orderNo}`;
+                    const tbody = document.getElementById('procurement-detail-body');
+                    if (!data.items || data.items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#8c8c8c;">无采购明细数据</td></tr>';
+                    } else {
+                        let totalCost = 0;
+                        tbody.innerHTML = data.items.map(item => {
+                            totalCost += (item.total_cost || 0);
+                            const statusMap = { pending: '⏳待采购', purchased: '✅已采购', skipped: '⏭已跳过' };
+                            return `<tr>
+                                <td>${item.part_name}</td>
+                                <td>${item.specs || '-'}</td>
+                                <td>${item.quantity}</td>
+                                <td>¥${(item.unit_cost || 0).toFixed(2)}</td>
+                                <td style="font-weight:bold;">¥${(item.total_cost || 0).toFixed(2)}</td>
+                                <td>${item.taobao_link ? '<a href="' + item.taobao_link + '" target="_blank" style="color:#1890ff;">🔗 淘宝</a>' : '-'}</td>
+                                <td>${statusMap[item.status] || item.status || '⏳待采购'}</td>
+                            </tr>`;
+                        }).join('') + `<tr style="background:#f5f5f5; font-weight:bold;"><td colspan="4">合计</td><td>¥${totalCost.toFixed(2)}</td><td colspan="2"></td></tr>`;
+                    }
+                    document.getElementById('procurement-detail-panel').style.display = 'block';
+                    document.getElementById('procurement-detail-panel').scrollIntoView({ behavior: 'smooth' });
+                })
+                .catch(e => alert('加载明细失败: ' + e.message));
+        }
+
+        function closeProcurementDetail() {
+            document.getElementById('procurement-detail-panel').style.display = 'none';
+        }
+
+        function resetProcurementFilter() {
+            document.getElementById('proc-search').value = '';
+            document.getElementById('proc-start-date').value = '';
+            document.getElementById('proc-end-date').value = '';
+            loadProcurementQuery();
+        }
+
+        // 页面加载时默认加载数据看板
+        document.addEventListener('DOMContentLoaded', () => {
+            restoreSidebarState();
+            openBOMEditorFromQuery().then((opened) => {
+                if (!opened) {
+                    loadDashboardStats(); // 默认加载数据看板
+                    loadProcurementQuery(); // 默认加载采购查询数据
+                }
+            });
+        });
+    </script>
 
             if(tabId === 'orders') loadOrders();
             if(tabId === 'dashboard') loadDashboardStats();
@@ -1534,13 +1640,13 @@
         }
 
         function downloadPlugin() {
-            // 下载插件文件 - 使用正确的后端路由
-            const downloadUrl = `${API_BASE}/downloads/n1_helper_v7.4_final.tar.gz`;
+            // 下载插件文件 - v7.3 修复版（支持 HTTPS 域名）
+            const downloadUrl = `${API_BASE}/downloads/n1_helper_v7.3_fix.tar.gz`;
 
             // 创建下载链接
             const link = document.createElement('a');
             link.href = downloadUrl;
-            link.download = 'n1_helper_v7.4_final.tar.gz';
+            link.download = 'n1_helper_v7.3_fix.tar.gz';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);

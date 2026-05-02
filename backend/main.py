@@ -79,6 +79,27 @@ class BOMItem(Base):
     estimated_cost = Column(Float)
     product = relationship("Product", back_populates="bom_items")
 
+class BOMVersion(Base):
+    __tablename__ = "bom_versions"
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), index=True)
+    version_no = Column(Integer)
+    note = Column(String, default="")
+    created_at = Column(DateTime, default=beijing_now)
+
+class BOMVersionItem(Base):
+    __tablename__ = "bom_version_items"
+    id = Column(Integer, primary_key=True, index=True)
+    version_id = Column(Integer, ForeignKey("bom_versions.id"), index=True)
+    part_name = Column(String)
+    specs = Column(String)
+    quantity = Column(String)
+    purchase_quantity = Column(String)
+    estimated_cost = Column(Float)
+    total_cost = Column(Float)
+    link = Column(String)
+    remark = Column(String)
+
 class Order(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
@@ -118,6 +139,56 @@ class OrderItem(Base):
 
 Base.metadata.create_all(bind=engine)
 
+def ensure_bom_version_tables():
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bom_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER,
+                version_no INTEGER,
+                note TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bom_version_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version_id INTEGER,
+                part_name TEXT,
+                specs TEXT,
+                quantity TEXT,
+                purchase_quantity TEXT,
+                estimated_cost REAL,
+                total_cost REAL,
+                link TEXT,
+                remark TEXT
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS order_procurement_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER,
+                version_no INTEGER,
+                note TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS order_procurement_version_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version_id INTEGER,
+                part_name TEXT,
+                specs TEXT,
+                quantity REAL DEFAULT 0,
+                unit_cost REAL DEFAULT 0,
+                total_cost REAL DEFAULT 0,
+                taobao_link TEXT,
+                status TEXT DEFAULT 'pending'
+            )
+        """))
+
+ensure_bom_version_tables()
+
 # ==================== Pydantic 模型 ====================
 class ProductSchema(BaseModel):
     sku_code: str
@@ -152,6 +223,164 @@ class BatchOrderCreate(BaseModel):
     order_type: str = "complete"
     items: List[BatchOrderItem]
 
+class BOMEditItem(BaseModel):
+    part_name: str = ""
+    specs: str = ""
+    quantity: str = ""
+    purchase_quantity: str = ""
+    estimated_cost: float = 0
+    total_cost: float = 0
+    link: str = ""
+    remark: str = ""
+
+class BOMSaveRequest(BaseModel):
+    items: List[BOMEditItem]
+    note: Optional[str] = ""
+
+class ProcurementEditItem(BaseModel):
+    part_name: str = ""
+    specs: str = ""
+    quantity: float = 0
+    unit_cost: float = 0
+    total_cost: float = 0
+    taobao_link: str = ""
+    status: str = "pending"
+
+class ProcurementSaveRequest(BaseModel):
+    items: List[ProcurementEditItem]
+    note: Optional[str] = ""
+
+def recalc_product_bom_costs(product_id: int, db: Session):
+    rows = db.execute(text("""
+        SELECT estimated_cost, total_cost, remark
+        FROM bom_items WHERE product_id = :pid
+    """), {"pid": product_id}).fetchall()
+
+    kit_cost = 0
+    total_cost = 0
+    for r in rows:
+        row_total = float(r[1] or 0)
+        total_cost += row_total
+        remark = r[2] or ""
+        if "N+1" in remark or "零件包" in remark:
+            kit_cost += row_total
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if product:
+        product.kit_cost = round(kit_cost, 2)
+        product.total_bom_cost = round(total_cost, 2)
+
+def snapshot_bom_version(product_id: int, note: str, db: Session):
+    current = db.execute(text("SELECT COALESCE(MAX(version_no), 0) FROM bom_versions WHERE product_id = :pid"), {"pid": product_id}).fetchone()
+    next_version = (current[0] if current and current[0] else 0) + 1
+
+    db.execute(text("""
+        INSERT INTO bom_versions (product_id, version_no, note, created_at)
+        VALUES (:product_id, :version_no, :note, :created_at)
+    """), {
+        "product_id": product_id,
+        "version_no": next_version,
+        "note": note or "手动保存",
+        "created_at": beijing_now()
+    })
+
+    version_id = db.execute(text("SELECT last_insert_rowid()")).fetchone()[0]
+    rows = db.execute(text("""
+        SELECT part_name, specs, quantity, purchase_quantity, estimated_cost, total_cost, link, remark
+        FROM bom_items WHERE product_id = :pid ORDER BY id
+    """), {"pid": product_id}).fetchall()
+
+    for row in rows:
+        db.execute(text("""
+            INSERT INTO bom_version_items (
+                version_id, part_name, specs, quantity, purchase_quantity,
+                estimated_cost, total_cost, link, remark
+            ) VALUES (
+                :version_id, :part_name, :specs, :quantity, :purchase_quantity,
+                :estimated_cost, :total_cost, :link, :remark
+            )
+        """), {
+            "version_id": version_id,
+            "part_name": row[0],
+            "specs": row[1],
+            "quantity": row[2],
+            "purchase_quantity": row[3],
+            "estimated_cost": row[4],
+            "total_cost": row[5],
+            "link": row[6],
+            "remark": row[7],
+        })
+
+    return next_version
+
+def snapshot_order_procurement_version(order_id: int, note: str, db: Session):
+    current = db.execute(text("SELECT COALESCE(MAX(version_no), 0) FROM order_procurement_versions WHERE order_id = :oid"), {"oid": order_id}).fetchone()
+    next_version = (current[0] if current and current[0] else 0) + 1
+    db.execute(text("""
+        INSERT INTO order_procurement_versions (order_id, version_no, note, created_at)
+        VALUES (:order_id, :version_no, :note, :created_at)
+    """), {
+        "order_id": order_id,
+        "version_no": next_version,
+        "note": note or "手动保存",
+        "created_at": beijing_now()
+    })
+    version_id = db.execute(text("SELECT last_insert_rowid()")).fetchone()[0]
+    rows = db.execute(text("""
+        SELECT part_name, specs, quantity, unit_cost, total_cost, taobao_link, status
+        FROM procurement_lists WHERE order_id = :oid ORDER BY id
+    """), {"oid": order_id}).fetchall()
+    for row in rows:
+        db.execute(text("""
+            INSERT INTO order_procurement_version_items (
+                version_id, part_name, specs, quantity, unit_cost, total_cost, taobao_link, status
+            ) VALUES (
+                :version_id, :part_name, :specs, :quantity, :unit_cost, :total_cost, :taobao_link, :status
+            )
+        """), {
+            "version_id": version_id,
+            "part_name": row[0],
+            "specs": row[1],
+            "quantity": row[2],
+            "unit_cost": row[3],
+            "total_cost": row[4],
+            "taobao_link": row[5],
+            "status": row[6],
+        })
+    return next_version
+
+def build_procurement_items_from_order(order, db: Session):
+    sql = text("""
+        SELECT part_name, specs, quantity, purchase_quantity, link, estimated_cost, total_cost
+        FROM bom_items
+        WHERE product_id = :pid
+        ORDER BY id
+    """)
+    bom_items = db.execute(sql, {"pid": order.product_id}).fetchall()
+    procurement_list = []
+    for item in bom_items:
+        part_name, specs, quantity_str, purchase_quantity_str, link, estimated_cost, total_cost = item
+        try:
+            purchase_qty = float(purchase_quantity_str) if purchase_quantity_str not in [None, ""] else float(quantity_str or 0)
+        except:
+            purchase_qty = 0
+        order_qty = float(order.quantity or 1)
+        final_qty = purchase_qty * order_qty
+        unit_cost = float(estimated_cost or 0)
+        final_total = float(total_cost or 0)
+        if final_total == 0 and unit_cost:
+            final_total = unit_cost * final_qty
+        procurement_list.append({
+            "part_name": part_name,
+            "specs": specs or "",
+            "quantity": final_qty,
+            "unit_cost": unit_cost,
+            "total_cost": final_total,
+            "taobao_link": link or "",
+            "status": "pending"
+        })
+    return procurement_list
+
 # ==================== 安全验证 ====================
 async def verify_auth(x_api_key: Optional[str] = Header(None)):
     if x_api_key != SECRET_PASSWORD:
@@ -185,6 +414,15 @@ def download_plugin():
         filename="n1_helper_v7.4_final.tar.gz"
     )
 
+@app.get("/downloads/n1_helper_v7.3_fix.tar.gz")
+def download_plugin_v73():
+    plugin_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "n1_helper_v7.3_fix.tar.gz")
+    return FileResponse(
+        plugin_path,
+        media_type="application/gzip",
+        filename="n1_helper_v7.3_fix.tar.gz"
+    )
+
 @app.get("/dealer.html")
 async def dealer_page():
     return FileResponse(os.path.join(FRONTEND_DIR, "dealer.html"))
@@ -195,6 +433,10 @@ async def dealer_v4_page():
 
 @app.get("/dealer_v5.html")
 async def dealer_v5_page():
+    return FileResponse(os.path.join(FRONTEND_DIR, "dealer_v5.html"))
+
+@app.get("/dealer")
+async def dealer_short_page():
     return FileResponse(os.path.join(FRONTEND_DIR, "dealer_v5.html"))
 
 @app.get("/index.html")
@@ -410,6 +652,123 @@ def get_product_bom(product_id: int, db: Session = Depends(get_db)):
         "total_cost": r[6],  # 总价（含运费，从数据库读取）
         "remark": r[7]  # 备注
     } for r in result]
+
+@app.get("/admin/products/{product_id}/bom-editor")
+def get_product_bom_editor(product_id: int, db: Session = Depends(get_db), auth=Depends(verify_auth)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="产品不存在")
+
+    items = get_product_bom(product_id, db)
+    latest = db.execute(text("""
+        SELECT id, version_no, note, created_at
+        FROM bom_versions
+        WHERE product_id = :pid
+        ORDER BY version_no DESC
+        LIMIT 10
+    """), {"pid": product_id}).fetchall()
+
+    return {
+        "product": {
+            "id": product.id,
+            "sku_code": product.sku_code,
+            "product_name": product.product_name
+        },
+        "items": items,
+        "versions": [{
+            "id": r[0],
+            "version_no": r[1],
+            "note": r[2],
+            "created_at": r[3]
+        } for r in latest]
+    }
+
+@app.post("/admin/products/{product_id}/bom-editor")
+def save_product_bom_editor(product_id: int, payload: BOMSaveRequest, db: Session = Depends(get_db), auth=Depends(verify_auth)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="产品不存在")
+
+    snapshot_bom_version(product_id, payload.note or "保存前备份", db)
+    db.execute(text("DELETE FROM bom_items WHERE product_id = :pid"), {"pid": product_id})
+
+    for item in payload.items:
+        if not any([
+            item.part_name.strip(), item.specs.strip(), item.quantity.strip(), item.purchase_quantity.strip(),
+            item.link.strip(), item.remark.strip(), float(item.estimated_cost or 0) != 0, float(item.total_cost or 0) != 0
+        ]):
+            continue
+
+        db.execute(text("""
+            INSERT INTO bom_items (
+                product_id, part_name, specs, quantity, link, estimated_cost,
+                remark, purchase_quantity, total_cost
+            ) VALUES (
+                :product_id, :part_name, :specs, :quantity, :link, :estimated_cost,
+                :remark, :purchase_quantity, :total_cost
+            )
+        """), {
+            "product_id": product_id,
+            "part_name": item.part_name,
+            "specs": item.specs,
+            "quantity": item.quantity,
+            "link": item.link,
+            "estimated_cost": item.estimated_cost,
+            "remark": item.remark,
+            "purchase_quantity": item.purchase_quantity,
+            "total_cost": item.total_cost,
+        })
+
+    recalc_product_bom_costs(product_id, db)
+    saved_version = snapshot_bom_version(product_id, payload.note or "手动保存", db)
+    db.commit()
+    return {"status": "success", "version_no": saved_version}
+
+@app.post("/admin/products/{product_id}/bom-editor/rollback/{version_id}")
+def rollback_product_bom_editor(product_id: int, version_id: int, db: Session = Depends(get_db), auth=Depends(verify_auth)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="产品不存在")
+
+    version = db.execute(text("SELECT id, version_no FROM bom_versions WHERE id = :vid AND product_id = :pid"), {
+        "vid": version_id, "pid": product_id
+    }).fetchone()
+    if not version:
+        raise HTTPException(status_code=404, detail="版本不存在")
+
+    snapshot_bom_version(product_id, f"回滚前备份", db)
+    db.execute(text("DELETE FROM bom_items WHERE product_id = :pid"), {"pid": product_id})
+
+    items = db.execute(text("""
+        SELECT part_name, specs, quantity, purchase_quantity, estimated_cost, total_cost, link, remark
+        FROM bom_version_items WHERE version_id = :vid ORDER BY id
+    """), {"vid": version_id}).fetchall()
+
+    for row in items:
+        db.execute(text("""
+            INSERT INTO bom_items (
+                product_id, part_name, specs, quantity, link, estimated_cost,
+                remark, purchase_quantity, total_cost
+            ) VALUES (
+                :product_id, :part_name, :specs, :quantity, :link, :estimated_cost,
+                :remark, :purchase_quantity, :total_cost
+            )
+        """), {
+            "product_id": product_id,
+            "part_name": row[0],
+            "specs": row[1],
+            "quantity": row[2],
+            "link": row[6],
+            "estimated_cost": row[4],
+            "remark": row[7],
+            "purchase_quantity": row[3],
+            "total_cost": row[5],
+        })
+
+    recalc_product_bom_costs(product_id, db)
+    new_version = snapshot_bom_version(product_id, f"回滚到 v{version[1]}", db)
+    db.commit()
+    return {"status": "success", "version_no": new_version}
 
 # ==================== 经销商门户 API ====================
 
@@ -1477,42 +1836,25 @@ def get_order_procurement_list(
     if not order:
         raise HTTPException(status_code=404, detail="订单不存在")
     
-    # 获取产品 BOM
-    sql = text("""
-        SELECT part_name, specs, quantity, link, estimated_cost
-        FROM bom_items
-        WHERE product_id = :pid
-    """)
-    
-    bom_items = db.execute(sql, {"pid": order.product_id}).fetchall()
-    
-    # 计算总需求（订单数量 × BOM 用量）
+    existing = db.execute(text("""
+        SELECT part_name, specs, quantity, unit_cost, total_cost, taobao_link, status
+        FROM procurement_lists WHERE order_id = :oid ORDER BY id
+    """), {"oid": order_id}).fetchall()
+
     procurement_list = []
-    for item in bom_items:
-        part_name, specs, quantity_str, link, estimated_cost = item
-        try:
-            quantity = float(quantity_str) if quantity_str else 0
-        except:
-            quantity = 0
-        
-        # 总需求 = BOM 用量 × 订单数量
-        total_qty = quantity * order.quantity
-        total_cost = (estimated_cost or 0) * total_qty
-        
-        procurement_list.append({
-            "part_name": part_name,
-            "specs": specs or "",
-            "quantity": total_qty,
-            "unit_cost": estimated_cost or 0,
-            "total_cost": total_cost,
-            "taobao_link": link or ""
-        })
-    
-    # 如果有调用零件包，减去零件包部分
-    if order.kit_quantity > 0:
-        # 零件包已经包含了部分零件，这里简化处理：直接显示完整 BOM
-        # 实际应该根据零件包的 BOM 来减去
-        pass
+    if existing:
+        for item in existing:
+            procurement_list.append({
+                "part_name": item[0],
+                "specs": item[1] or "",
+                "quantity": item[2] or 0,
+                "unit_cost": item[3] or 0,
+                "total_cost": item[4] or 0,
+                "taobao_link": item[5] or "",
+                "status": item[6] or "pending"
+            })
+    else:
+        procurement_list = build_procurement_items_from_order(order, db)
     
     return {
         "order_id": order_id,
@@ -1524,6 +1866,95 @@ def get_order_procurement_list(
         "estimated_cost": sum(item["total_cost"] for item in procurement_list),
         "items": procurement_list
     }
+
+@app.get("/admin/orders/{order_id}/procurement-editor")
+def get_order_procurement_editor(order_id: int, db: Session = Depends(get_db), auth=Depends(verify_auth)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    data = get_order_procurement_list(order_id, db, auth)
+    versions = db.execute(text("""
+        SELECT id, version_no, note, created_at
+        FROM order_procurement_versions
+        WHERE order_id = :oid
+        ORDER BY version_no DESC
+        LIMIT 10
+    """), {"oid": order_id}).fetchall()
+    return {
+        "order": {
+            "id": order.id,
+            "order_no": order.order_no,
+            "product_name": order.product_name,
+            "quantity": order.quantity
+        },
+        "items": data["items"],
+        "versions": [{
+            "id": r[0], "version_no": r[1], "note": r[2], "created_at": r[3]
+        } for r in versions]
+    }
+
+@app.post("/admin/orders/{order_id}/procurement-editor")
+def save_order_procurement_editor(order_id: int, payload: ProcurementSaveRequest, db: Session = Depends(get_db), auth=Depends(verify_auth)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    snapshot_order_procurement_version(order_id, payload.note or "保存前备份", db)
+    db.execute(text("DELETE FROM procurement_lists WHERE order_id = :oid"), {"oid": order_id})
+    for item in payload.items:
+        if not any([
+            item.part_name.strip(), item.specs.strip(), item.taobao_link.strip(),
+            float(item.quantity or 0) != 0, float(item.unit_cost or 0) != 0, float(item.total_cost or 0) != 0
+        ]):
+            continue
+        db.execute(text("""
+            INSERT INTO procurement_lists (order_id, part_name, specs, quantity, unit_cost, total_cost, taobao_link, status)
+            VALUES (:order_id, :part_name, :specs, :quantity, :unit_cost, :total_cost, :taobao_link, :status)
+        """), {
+            "order_id": order_id,
+            "part_name": item.part_name,
+            "specs": item.specs,
+            "quantity": item.quantity,
+            "unit_cost": item.unit_cost,
+            "total_cost": item.total_cost,
+            "taobao_link": item.taobao_link,
+            "status": item.status or "pending"
+        })
+    order.procurement_cost = sum(float(i.total_cost or 0) for i in payload.items)
+    order.updated_at = beijing_now()
+    new_version = snapshot_order_procurement_version(order_id, payload.note or "手动保存", db)
+    db.commit()
+    return {"status": "success", "version_no": new_version}
+
+@app.post("/admin/orders/{order_id}/procurement-editor/rollback/{version_id}")
+def rollback_order_procurement_editor(order_id: int, version_id: int, db: Session = Depends(get_db), auth=Depends(verify_auth)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    version = db.execute(text("SELECT id, version_no FROM order_procurement_versions WHERE id = :vid AND order_id = :oid"), {
+        "vid": version_id, "oid": order_id
+    }).fetchone()
+    if not version:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    snapshot_order_procurement_version(order_id, "回滚前备份", db)
+    db.execute(text("DELETE FROM procurement_lists WHERE order_id = :oid"), {"oid": order_id})
+    rows = db.execute(text("""
+        SELECT part_name, specs, quantity, unit_cost, total_cost, taobao_link, status
+        FROM order_procurement_version_items WHERE version_id = :vid ORDER BY id
+    """), {"vid": version_id}).fetchall()
+    for row in rows:
+        db.execute(text("""
+            INSERT INTO procurement_lists (order_id, part_name, specs, quantity, unit_cost, total_cost, taobao_link, status)
+            VALUES (:order_id, :part_name, :specs, :quantity, :unit_cost, :total_cost, :taobao_link, :status)
+        """), {
+            "order_id": order_id,
+            "part_name": row[0], "specs": row[1], "quantity": row[2], "unit_cost": row[3],
+            "total_cost": row[4], "taobao_link": row[5], "status": row[6]
+        })
+    order.procurement_cost = sum(float(r[4] or 0) for r in rows)
+    order.updated_at = beijing_now()
+    new_version = snapshot_order_procurement_version(order_id, f"回滚到 v{version[1]}", db)
+    db.commit()
+    return {"status": "success", "version_no": new_version}
 
 @app.post("/admin/orders/{order_id}/save-procurement")
 def save_order_procurement(
@@ -1654,6 +2085,102 @@ def get_consolidated_bom(
         "bom_items": bom_list
     }
 
+@app.get("/admin/orders/procurement-query")
+def query_order_procurement_data(
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    """查询所有订单的零部件采购数据（第三项功能：订单采购数据可查询）"""
+    from sqlalchemy import text
+
+    # 构建筛选条件
+    conditions = ["o.status != 'cancelled'"]
+    params = {}
+    if search:
+        conditions.append("(o.order_no LIKE :search OR o.product_name LIKE :search OR o.customer_name LIKE :search)")
+        params["search"] = f"%{search}%"
+    if start_date:
+        conditions.append("DATE(o.created_at) >= DATE(:start_date)")
+        params["start_date"] = start_date
+    if end_date:
+        conditions.append("DATE(o.created_at) <= DATE(:end_date)")
+        params["end_date"] = end_date
+
+    where_clause = " AND ".join(conditions)
+
+    # 获取订单列表
+    orders = db.execute(text(f"""
+        SELECT o.id, o.order_no, o.product_name, o.product_sku, o.quantity,
+               o.total_amount, o.procurement_cost, o.status, o.created_at,
+               o.customer_name
+        FROM orders o
+        WHERE {where_clause}
+        ORDER BY o.created_at DESC
+    """), params).fetchall()
+
+    result = []
+    for row in orders:
+        order_id = row[0]
+        # 查询该订单的采购明细
+        procurement_items = db.execute(text("""
+            SELECT part_name, specs, quantity, unit_cost, total_cost, taobao_link, status
+            FROM procurement_lists
+            WHERE order_id = :oid
+            ORDER BY id
+        """), {"oid": order_id}).fetchall()
+
+        items = []
+        actual_procurement_total = 0
+        for item in procurement_items:
+            item_total = item[4] or 0
+            actual_procurement_total += item_total
+            items.append({
+                "part_name": item[0],
+                "specs": item[1] or "",
+                "quantity": item[2] or 0,
+                "unit_cost": item[3] or 0,
+                "total_cost": item_total,
+                "taobao_link": item[5] or "",
+                "status": item[6] or "pending"
+            })
+
+        result.append({
+            "order_id": order_id,
+            "order_no": row[1],
+            "product_name": row[2] or "",
+            "product_sku": row[3] or "",
+            "quantity": row[4] or 0,
+            "total_amount": row[5] or 0,
+            "procurement_cost": row[6] or 0,
+            "status": row[7] or "",
+            "created_at": str(row[8]) if row[8] else "",
+            "customer_name": row[9] or "",
+            "parts_count": len(items),
+            "actual_procurement_total": round(actual_procurement_total, 2),
+            "procurement_items": items
+        })
+
+    # 汇总统计
+    total_orders = len(result)
+    total_revenue = sum(r["total_amount"] for r in result)
+    total_procurement = sum(r["procurement_cost"] for r in result)
+    total_parts = sum(r["parts_count"] for r in result)
+
+    return {
+        "summary": {
+            "total_orders": total_orders,
+            "total_revenue": round(total_revenue, 2),
+            "total_procurement": round(total_procurement, 2),
+            "total_profit": round(total_revenue - total_procurement, 2),
+            "total_parts": total_parts
+        },
+        "orders": result
+    }
+
+
 @app.post("/admin/orders/export-bom-csv")
 def export_bom_to_csv(
     order_ids: str,
@@ -1743,4 +2270,3 @@ def batch_procure_orders(
             "total_revenue": bom_data['total_revenue']
         }
     }
-

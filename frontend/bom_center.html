@@ -112,14 +112,14 @@
         // 加载产品列表
         async function loadProducts() {
             try {
-                const resp = await fetch('http://43.156.225.39:8000/admin/product-bom-center', {
+                const resp = await fetch(window.location.origin + '/api/admin/product-bom-center', {
                     headers: { 'X-API-Key': API_KEY }
                 });
                 allProducts = await resp.json();
                 renderProductList(allProducts);
             } catch (error) {
                 console.error('加载失败:', error);
-                alert('加载失败，请确保后端服务已启动 (端口 8000)');
+                alert('加载失败，请检查后端服务或 /api 代理配置');
             }
         }
 
