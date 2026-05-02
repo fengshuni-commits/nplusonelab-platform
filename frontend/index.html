@@ -118,6 +118,10 @@
                 <span>👥</span>
                 <span class="nav-text">用户管理</span>
             </div>
+            <div class="nav-item" onclick="switchTab('procurement', this)">
+                <span>🔍</span>
+                <span class="nav-text">采购查询</span>
+            </div>
         </div>
 
         <!-- 退出登录按钮 -->
@@ -399,6 +403,80 @@
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- 采购查询视图 -->
+        <div id="view-procurement" style="display:none;">
+            <div style="background:#fff; padding:20px; border-radius:8px; margin-bottom:24px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <h3 style="margin-bottom:15px;">🔍 订单采购数据查询</h3>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" id="proc-search" placeholder="搜索订单号/客户名/产品名" style="padding:8px 12px; border:1px solid #d9d9d9; border-radius:4px; width:200px;">
+                    <input type="date" id="proc-start-date" style="padding:8px 12px; border:1px solid #d9d9d9; border-radius:4px;">
+                    <span>至</span>
+                    <input type="date" id="proc-end-date" style="padding:8px 12px; border:1px solid #d9d9d9; border-radius:4px;">
+                    <button class="btn btn-primary" onclick="loadProcurementQuery()" style="background:#1890ff; color:white; border:none; padding:10px 20px;">🔍 查询</button>
+                    <button class="btn" onclick="resetProcurementFilter()" style="margin-left:10px;">🔄 重置</button>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:15px; margin-bottom:24px;">
+                <div style="background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">📦 订单数</div>
+                    <div id="proc-stat-orders" style="font-size:28px; font-weight:bold; margin-top:5px;">0</div>
+                </div>
+                <div style="background:linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">💰 订单总额</div>
+                    <div id="proc-stat-revenue" style="font-size:28px; font-weight:bold; margin-top:5px;">¥0</div>
+                </div>
+                <div style="background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">📉 采购成本</div>
+                    <div id="proc-stat-cost" style="font-size:28px; font-weight:bold; margin-top:5px;">¥0</div>
+                </div>
+                <div style="background:linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">🔧 零部件数</div>
+                    <div id="proc-stat-parts" style="font-size:28px; font-weight:bold; margin-top:5px;">0</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#fafafa;">
+                            <th style="padding:12px; text-align:left;">订单号</th>
+                            <th style="padding:12px; text-align:left;">产品</th>
+                            <th style="padding:12px; text-align:left;">客户</th>
+                            <th style="padding:12px; text-align:left;">数量</th>
+                            <th style="padding:12px; text-align:left;">订单金额</th>
+                            <th style="padding:12px; text-align:left;">采购成本</th>
+                            <th style="padding:12px; text-align:left;">利润</th>
+                            <th style="padding:12px; text-align:left;">零部件</th>
+                            <th style="padding:12px; text-align:left;">状态</th>
+                            <th style="padding:12px; text-align:left;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="procurement-query-body">
+                        <tr><td colspan="10" style="text-align:center; padding:40px; color:#8c8c8c;">点击"查询"加载数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="procurement-detail-panel" style="display:none; margin-top:20px; background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h4 id="procurement-detail-title">🔧 零部件明细</h4>
+                    <button class="btn" onclick="closeProcurementDetail()" style="padding:6px 16px;">✖ 关闭</button>
+                </div>
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#fafafa;">
+                            <th style="padding:10px; text-align:left;">零件名称</th>
+                            <th style="padding:10px; text-align:left;">规格</th>
+                            <th style="padding:10px; text-align:left;">数量</th>
+                            <th style="padding:10px; text-align:left;">单价</th>
+                            <th style="padding:10px; text-align:left;">小计</th>
+                            <th style="padding:10px; text-align:left;">淘宝链接</th>
+                            <th style="padding:10px; text-align:left;">状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="procurement-detail-body"></tbody>
+                </table>
             </div>
         </div>
 
@@ -776,6 +854,7 @@
             document.getElementById('view-products').style.display = 'none';
             document.getElementById('view-dealers').style.display = 'none';
             document.getElementById('view-users').style.display = 'none';
+            document.getElementById('view-procurement').style.display = 'none';
 
             document.getElementById('view-' + tabId).style.display = 'block';
 
@@ -785,6 +864,7 @@
 
             if(tabId === 'orders') loadOrders();
             if(tabId === 'dashboard') loadDashboardStats();
+            if(tabId === 'procurement') loadProcurementQuery();
             if(tabId === 'products') loadProducts();
             if(tabId === 'dealers') loadDealers();
             if(tabId === 'users') loadUsers();
@@ -2440,6 +2520,95 @@
         // 页面加载时恢复侧边栏状态
         restoreSidebarState();
         loadStats();
+
+        // ==================== 采购查询功能 ====================
+        async function loadProcurementQuery() {
+            const search = document.getElementById('proc-search') ? document.getElementById('proc-search').value : '';
+            const startDate = document.getElementById('proc-start-date') ? document.getElementById('proc-start-date').value : '';
+            const endDate = document.getElementById('proc-end-date') ? document.getElementById('proc-end-date').value : '';
+
+            let url = `${API_BASE}/admin/orders/procurement-query?`;
+            if (search) url += `search=${encodeURIComponent(search)}&`;
+            if (startDate) url += `start_date=${startDate}&`;
+            if (endDate) url += `end_date=${endDate}&`;
+
+            try {
+                const resp = await fetch(url, { headers: { 'X-API-Key': 'n1lab2026' } });
+                const data = await resp.json();
+                if (!resp.ok) { alert(data.detail || '查询失败'); return; }
+
+                document.getElementById('proc-stat-orders').innerText = data.summary.total_orders;
+                document.getElementById('proc-stat-revenue').innerText = `¥${data.summary.total_revenue.toLocaleString('zh-CN', {minimumFractionDigits: 2})}`;
+                document.getElementById('proc-stat-cost').innerText = `¥${data.summary.total_procurement.toLocaleString('zh-CN', {minimumFractionDigits: 2})}`;
+                document.getElementById('proc-stat-parts').innerText = data.summary.total_parts;
+
+                const tbody = document.getElementById('procurement-query-body');
+                if (data.orders.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; padding:40px; color:#8c8c8c;">无匹配的订单数据</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.orders.map(o => {
+                    const profit = (o.total_amount - o.procurement_cost).toFixed(2);
+                    const profitColor = profit >= 0 ? '#52c41a' : '#ff4d4f';
+                    const statusMap = { pending: '✅待处理', prepared: '📦已备货', shipped: '🚚已发货', completed: '✅已完成', cancelled: '❌已取消' };
+                    const statusLabel = statusMap[o.status] || o.status;
+                    return `<tr>
+                        <td style="font-weight:bold; color:#1890ff;">${o.order_no}</td>
+                        <td>${o.product_name}</td>
+                        <td>${o.customer_name}</td>
+                        <td>${o.quantity}</td>
+                        <td>¥${(o.total_amount || 0).toFixed(2)}</td>
+                        <td style="color:#fa8c16; font-weight:bold;">¥${(o.procurement_cost || 0).toFixed(2)}</td>
+                        <td style="color:${profitColor}; font-weight:bold;">¥${profit}</td>
+                        <td>${o.parts_count > 0 ? '<span style="background:#e6f7ff; color:#1890ff; padding:2px 8px; border-radius:4px;">' + o.parts_count + ' 个</span>' : '<span style="color:#8c8c8c;">未拆解</span>'}</td>
+                        <td>${statusLabel}</td>
+                        <td>${o.parts_count > 0 ? '<button class="btn" onclick="showProcurementDetail(' + o.order_id + ', \'' + o.order_no + '\')" style="padding:4px 10px; font-size:12px; background:#1890ff; color:white; border:none;">🔍 查看明细</button>' : '<span style="color:#8c8c8c; font-size:12px;">无数据</span>'}</td>
+                    </tr>`;
+                }).join('');
+                document.getElementById('procurement-detail-panel').style.display = 'none';
+            } catch (e) { alert('查询失败: ' + e.message); }
+        }
+
+        function showProcurementDetail(orderId, orderNo) {
+            fetch(`${API_BASE}/admin/orders/${orderId}/procurement-list`, { headers: { 'X-API-Key': 'n1lab2026' } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('procurement-detail-title').innerText = `🔧 零部件明细 - 订单 ${orderNo}`;
+                    const tbody = document.getElementById('procurement-detail-body');
+                    if (!data.items || data.items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#8c8c8c;">无采购明细数据</td></tr>';
+                    } else {
+                        let totalCost = 0;
+                        tbody.innerHTML = data.items.map(item => {
+                            totalCost += (item.total_cost || 0);
+                            const statusMap = { pending: '⏳待采购', purchased: '✅已采购', skipped: '⏭已跳过' };
+                            return `<tr>
+                                <td>${item.part_name}</td>
+                                <td>${item.specs || '-'}</td>
+                                <td>${item.quantity}</td>
+                                <td>¥${(item.unit_cost || 0).toFixed(2)}</td>
+                                <td style="font-weight:bold;">¥${(item.total_cost || 0).toFixed(2)}</td>
+                                <td>${item.taobao_link ? '<a href="' + item.taobao_link + '" target="_blank" style="color:#1890ff;">🔗 淘宝</a>' : '-'}</td>
+                                <td>${statusMap[item.status] || item.status || '⏳待采购'}</td>
+                            </tr>`;
+                        }).join('') + `<tr style="background:#f5f5f5; font-weight:bold;"><td colspan="4">合计</td><td>¥${totalCost.toFixed(2)}</td><td colspan="2"></td></tr>`;
+                    }
+                    document.getElementById('procurement-detail-panel').style.display = 'block';
+                    document.getElementById('procurement-detail-panel').scrollIntoView({ behavior: 'smooth' });
+                })
+                .catch(e => alert('加载明细失败: ' + e.message));
+        }
+
+        function closeProcurementDetail() {
+            document.getElementById('procurement-detail-panel').style.display = 'none';
+        }
+
+        function resetProcurementFilter() {
+            document.getElementById('proc-search').value = '';
+            document.getElementById('proc-start-date').value = '';
+            document.getElementById('proc-end-date').value = '';
+            loadProcurementQuery();
+        }
     </script>
 </body>
 </html>
