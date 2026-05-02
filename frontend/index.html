@@ -2086,8 +2086,7 @@
                     }
                 }
 
-                // 构建采购清单数据
-                const orderQuantity = order.quantity || 1;
+                // 构建采购清单数据（orderQuantity 已在上方声明）
                 const partsList = orderBomItems
                     .filter(item => item.part_name && item.taobao_link && (item.taobao_link.includes('item.htm') || item.taobao_link.includes('tmall.com')))
                     .map((item, index) => {
@@ -2103,12 +2102,12 @@
                         return {
                             index: index + 1,
                             name: item.part_name,
-                            spec: item.specification || '',
+                            spec: item.specification || item.specs || '',
                             singleQty: singleQty,
                             quantity: Math.ceil(purchaseBase * orderQuantity),
                             link: item.taobao_link,
-                            price: item.unit_price || 0,
-                            total: item.total_price || 0
+                            price: item.unit_price || item.unit_cost || 0,
+                            total: item.total_price || item.total_cost || 0
                         };
                     });
 
