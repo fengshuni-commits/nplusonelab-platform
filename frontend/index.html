@@ -480,11 +480,29 @@
             </div>
         </div>
 
-        <!-- BOM 弹窗 -->
-        <div id="bom-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:90%; max-width:1000px; max-height:85vh; background:white; z-index:2000; padding:28px; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,0.2); overflow-y:auto;">
+        <!-- BOM 编辑弹窗 -->
+        <div id="bom-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; max-height:85vh; background:white; z-index:2000; padding:28px; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,0.2); overflow-y:auto;">
             <h3 id="bom-title" style="margin-bottom:20px;">物料清单</h3>
-            <div id="bom-body"></div>
-            <button onclick="closeModal()" class="btn" style="width:100%; margin-top:16px; padding:12px;">关闭</button>
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead>
+                    <tr style="background:#fafafa;">
+                        <th style="padding:8px; text-align:left;">零件名称</th>
+                        <th style="padding:8px; text-align:left;">规格型号</th>
+                        <th style="padding:8px; text-align:left;">数量</th>
+                        <th style="padding:8px; text-align:left;">采购用量</th>
+                        <th style="padding:8px; text-align:left;">单价</th>
+                        <th style="padding:8px; text-align:left;">小计</th>
+                        <th style="padding:8px; text-align:left;">链接</th>
+                        <th style="padding:8px; text-align:center;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="bom-body"></tbody>
+            </table>
+            <div style="margin-top:16px; display:flex; gap:10px;">
+                <button onclick="addBOMRow()" class="btn" style="flex:1; border-style:dashed; color:#1890ff;">➕ 新增零部件</button>
+                <button onclick="saveBOMEditor()" class="btn btn-success" style="flex:1; background:#52c41a; color:white; border:none;">💾 保存</button>
+                <button onclick="closeModal()" class="btn" style="flex:1;">关闭</button>
+            </div>
         </div>
 
         <!-- 价格编辑弹窗 -->
@@ -2524,15 +2542,103 @@
         loadStats();
 
         // ==================== BOM 编辑器 ====================
+        let currentEditProductId = null;
         async function openBOMEditor(productId, productName) {
-            // 跳转到 BOM 编辑页面
-            window.location.href = `${API_BASE}/admin/products/${productId}/bom-editor`;
+            currentEditProductId = productId;
+            try {
+                const resp = await fetch(`${API_BASE}/admin/products/${productId}/bom-editor`, { headers: { 'X-API-Key': 'n1lab2026' } });
+                const data = await resp.json();
+                if (!resp.ok) { alert(data.detail || '加载失败'); return; }
+
+                document.getElementById('bom-title').innerText = `✏️ BOM 编辑 - ${data.product.sku_code} ${data.product.product_name}`;
+                const body = document.getElementById('bom-body');
+                body.innerHTML = data.items.map((item, idx) => `<tr>
+                    <td><input type="text" value="${item.part_name || ''}" data-field="part_name" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.specs || ''}" data-field="specs" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.quantity || ''}" data-field="quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.purchase_quantity || ''}" data-field="purchase_quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="number" value="${item.estimated_cost || 0}" data-field="estimated_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="number" value="${item.total_cost || 0}" data-field="total_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.link || ''}" data-field="link" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><button onclick="this.closest('tr').remove()" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
+                </tr>`).join('');
+
+                // 显示弹窗
+                document.getElementById('bom-modal').style.display = 'block';
+                document.getElementById('modal-mask').style.display = 'block';
+            } catch (e) { alert('加载BOM失败: ' + e.message); }
+        }
+
+        function addBOMRow() {
+            const body = document.getElementById('bom-body');
+            const idx = body.rows.length;
+            body.innerHTML += `<tr>
+                <td><input type="text" value="" data-field="part_name" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="" data-field="specs" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="" data-field="quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="" data-field="purchase_quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="number" value="0" data-field="estimated_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="number" value="0" data-field="total_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="" data-field="link" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><button onclick="this.closest('tr').remove()" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
+            </tr>`;
+        }
+
+        async function saveBOMEditor() {
+            const rows = document.getElementById('bom-body').querySelectorAll('tr');
+            const items = Array.from(rows).map(row => {
+                const inputs = row.querySelectorAll('input');
+                return {
+                    part_name: inputs[0].value,
+                    specs: inputs[1].value,
+                    quantity: inputs[2].value,
+                    purchase_quantity: inputs[3].value,
+                    estimated_cost: parseFloat(inputs[4].value) || 0,
+                    total_cost: parseFloat(inputs[5].value) || 0,
+                    link: inputs[6].value
+                };
+            });
+            try {
+                const resp = await fetch(`${API_BASE}/admin/products/${currentEditProductId}/bom-editor`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': 'n1lab2026' },
+                    body: JSON.stringify({ items, note: 'BOM编辑保存' })
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    alert('✅ BOM 保存成功！已创建新版本');
+                    document.getElementById('bom-modal').style.display = 'none';
+                    document.getElementById('modal-mask').style.display = 'none';
+                    loadProducts();
+                } else { alert(data.detail || '保存失败'); }
+            } catch (e) { alert('保存失败: ' + e.message); }
         }
 
         // ==================== 订单采购清单编辑器 ====================
+        let currentEditOrderId = null;
         async function openOrderProcurementEditor(orderId) {
-            // 跳转到订单采购清单编辑页面
-            window.location.href = `${API_BASE}/admin/orders/${orderId}/procurement-editor`;
+            currentEditOrderId = orderId;
+            try {
+                const resp = await fetch(`${API_BASE}/admin/orders/${orderId}/procurement-editor`, { headers: { 'X-API-Key': 'n1lab2026' } });
+                const data = await resp.json();
+                if (!resp.ok) { alert(data.detail || '加载失败'); return; }
+
+                document.getElementById('bom-title').innerText = `✏️ 采购清单编辑 - 订单 #${orderId}`;
+                const body = document.getElementById('bom-body');
+                body.innerHTML = (data.items || []).map((item, idx) => `<tr>
+                    <td><input type="text" value="${item.part_name || ''}" data-field="part_name" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.specs || ''}" data-field="specs" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.quantity || ''}" data-field="quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.purchase_quantity || ''}" data-field="purchase_quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="number" value="${item.estimated_cost || item.unit_cost || 0}" data-field="estimated_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="number" value="${item.total_cost || 0}" data-field="total_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><input type="text" value="${item.link || item.taobao_link || ''}" data-field="link" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                    <td><button onclick="this.closest('tr').remove()" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
+                </tr>`).join('');
+
+                document.getElementById('bom-modal').style.display = 'block';
+                document.getElementById('modal-mask').style.display = 'block';
+            } catch (e) { alert('加载采购清单失败: ' + e.message); }
         }
 
         // ==================== 采购查询功能 ====================
