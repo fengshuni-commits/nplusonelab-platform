@@ -713,8 +713,10 @@
 
     <script>
         // 动态适配本地与服务器部署环境
-        // 后端 FastAPI 直接服务页面和 API（无 /api 前缀），所以 API_BASE = origin
-        const API_BASE = window.location.origin;
+        // 后端 API 通过 Nginx /api/ 前缀代理到 8000 端口
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:8000' 
+            : window.location.origin + '/api';
         let allProducts = []; // 全局产品缓存
         let currentTab = 'dashboard';
         // 从 localStorage 读取当前用户
