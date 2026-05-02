@@ -1220,6 +1220,7 @@
                         <td style="text-align:center;">
                             <div style="display:flex; flex-direction:column; gap:4px; align-items:center;">
                                 ${bomBtn}
+                                <button class="btn" onclick="openBOMEditor(${p.id}, '${p.product_name}')" style="padding:4px 10px; font-size:12px; white-space:nowrap; background:#722ed1; color:white; border:none;">✏️ 编辑 BOM</button>
                                 <button class="btn" onclick="editPrice(${p.id}, '${p.sku_code}', ${p.dealer_price}, ${p.retail_price})" style="padding:4px 10px; font-size:12px; white-space:nowrap;">✏️ 改价</button>
                                 <button class="btn" onclick="editStock(${p.id}, '${p.sku_code}', ${p.kit_stock_quantity || 0}, ${p.stock_quantity || 0})" style="padding:4px 10px; font-size:12px; white-space:nowrap;">📦 库存</button>
                             </div>
@@ -1759,6 +1760,7 @@
                             <td>${o.created_at ? o.created_at.split('T')[0] : '-'}</td>
                             <td>
                                 <button class="btn" onclick="viewOrderDetail(${o.id})" style="padding:4px 10px; font-size:12px;">👁️ 详情</button>
+                                <button class="btn" onclick="openOrderProcurementEditor(${o.id})" style="padding:4px 10px; font-size:12px; background:#722ed1; color:white; border:none; margin-bottom:4px;">✏️ 编辑清单</button>
                                 <button class="btn btn-success" onclick="orderParts(${o.id}, ${o.product_id === null || o.product_id === undefined || o.product_id === '' ? 'null' : o.product_id}, '${o.order_type}')" style="padding:4px 10px; font-size:12px; background:#52c41a; color:white; border:none;">🛒 零部件下单</button>
                                 <button class="btn" onclick="updateOrderStatus(${o.id})" style="padding:4px 10px; font-size:12px;">✏️ 状态</button>
                             </td>
@@ -2520,6 +2522,18 @@
         // 页面加载时恢复侧边栏状态
         restoreSidebarState();
         loadStats();
+
+        // ==================== BOM 编辑器 ====================
+        async function openBOMEditor(productId, productName) {
+            // 跳转到 BOM 编辑页面
+            window.location.href = `${API_BASE}/admin/products/${productId}/bom-editor`;
+        }
+
+        // ==================== 订单采购清单编辑器 ====================
+        async function openOrderProcurementEditor(orderId) {
+            // 跳转到订单采购清单编辑页面
+            window.location.href = `${API_BASE}/admin/orders/${orderId}/procurement-editor`;
+        }
 
         // ==================== 采购查询功能 ====================
         async function loadProcurementQuery() {
