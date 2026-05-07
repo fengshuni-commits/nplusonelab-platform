@@ -304,6 +304,26 @@ window.addEventListener('message', async (event) => {
     if (event.data.action === 'N1_CAPTURE_INVOICE_PAGE') await syncTaobaoInvoicesNow();
 });
 
+chrome.runtime?.onMessage?.addListener((request, sender, sendResponse) => {
+    if (!request || !request.action) return;
+    if (request.action === 'PING') {
+        sendResponse({ ok: true, page: location.href });
+        return;
+    }
+    if (request.action === 'N1_CAPTURE_TAOBAO_ORDERS_INTERNAL') {
+        syncTaobaoOrdersNow()
+            .then(() => sendResponse({ ok: true }))
+            .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
+        return true;
+    }
+    if (request.action === 'N1_CAPTURE_INVOICE_PAGE_INTERNAL') {
+        syncTaobaoInvoicesNow()
+            .then(() => sendResponse({ ok: true }))
+            .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
+        return true;
+    }
+});
+
 // ============ 全局状态 ============
 let isListening = false;
 let _clickHandler = null;
