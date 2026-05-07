@@ -536,14 +536,12 @@
                             <th>订单金额</th>
                             <th>订单状态</th>
                             <th>发票状态</th>
-                            <th>发票抬头</th>
                             <th>发票金额</th>
-                            <th>发票号</th>
                             <th>发票链接</th>
                         </tr>
                     </thead>
                     <tbody id="tb-orders-body">
-                        <tr><td colspan="11" style="text-align:center; padding:32px; color:#8c8c8c;">点击同步或刷新加载数据</td></tr>
+                        <tr><td colspan="9" style="text-align:center; padding:32px; color:#8c8c8c;">点击同步或刷新加载数据</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -3093,7 +3091,7 @@
                 const tbody = document.getElementById('tb-orders-body');
                 if (!resp.ok) throw new Error(rows.detail || '加载失败');
                 if (!rows.length) {
-                    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; padding:32px; color:#8c8c8c;">暂无淘宝订单数据</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:32px; color:#8c8c8c;">暂无淘宝订单数据</td></tr>';
                     return;
                 }
                 tbody.innerHTML = rows.map(row => {
@@ -3120,15 +3118,13 @@
                         <td>¥${(row.amount_value || 0).toFixed(2)}</td>
                         <td>${row.order_status || '-'}</td>
                         <td>${invoiceTag}${invoiceBadge}</td>
-                        <td>${row.invoice_title || '-'}</td>
                         <td>${row.invoice_amount_value ? `¥${Number(row.invoice_amount_value).toFixed(2)}` : '-'}</td>
-                        <td>${row.invoice_no || '-'}</td>
                         <td>${row.invoice_file_url ? `<a href="${row.invoice_file_url}" target="_blank" style="color:#1890ff;">🔗 打开</a>` : '-'}</td>
                     </tr>
                 `}).join('');
             } catch (e) {
                 console.error('加载淘宝订单失败:', e);
-                document.getElementById('tb-orders-body').innerHTML = `<tr><td colspan="11" style="text-align:center; padding:32px; color:red;">${e.message}</td></tr>`;
+                document.getElementById('tb-orders-body').innerHTML = `<tr><td colspan="9" style="text-align:center; padding:32px; color:red;">${e.message}</td></tr>`;
             }
         }
 
