@@ -2520,10 +2520,14 @@ def list_taobao_orders(
                o.amount_text, o.amount_value, o.order_status, o.invoice_status, o.invoice_candidate,
                o.source_page_url, o.last_synced_at,
                i.invoice_status AS linked_invoice_status,
-               i.download_status AS linked_download_status
+               i.download_status AS linked_download_status,
+               i.invoice_title AS linked_invoice_title,
+               i.invoice_amount_value AS linked_invoice_amount_value,
+               i.invoice_no AS linked_invoice_no,
+               i.file_url AS linked_file_url
         FROM taobao_orders o
         LEFT JOIN (
-            SELECT taobao_order_no, invoice_status, download_status, last_synced_at
+            SELECT taobao_order_no, invoice_status, download_status, invoice_title, invoice_amount_value, invoice_no, file_url, last_synced_at
             FROM taobao_invoices ti1
             WHERE id = (
                 SELECT id FROM taobao_invoices ti2
@@ -2542,11 +2546,15 @@ def list_taobao_orders(
         order_invoice_status = r[9] or "未知"
         linked_invoice_status = r[13] or ""
         linked_download_status = r[14] or ""
+        linked_invoice_title = r[15] or ""
+        linked_invoice_amount_value = r[16] or 0
+        linked_invoice_no = r[17] or ""
+        linked_file_url = r[18] or ""
 
         merged_invoice_status = order_invoice_status
         if linked_download_status == 'downloaded':
             merged_invoice_status = '已下载'
-        elif linked_invoice_status in ('已开票', '开票中', '已下载'):
+        elif linked_invoice_status in ('已开票', '开票中', '已下载', '可开票'):
             merged_invoice_status = linked_invoice_status
 
         result.append({
@@ -2563,6 +2571,10 @@ def list_taobao_orders(
             "invoice_status_order": order_invoice_status,
             "invoice_status_invoice": linked_invoice_status,
             "invoice_download_status": linked_download_status,
+            "invoice_title": linked_invoice_title,
+            "invoice_amount_value": linked_invoice_amount_value,
+            "invoice_no": linked_invoice_no,
+            "invoice_file_url": linked_file_url,
             "invoice_candidate": bool(r[10]),
             "source_page_url": r[11] or "",
             "last_synced_at": str(r[12]) if r[12] else ""
