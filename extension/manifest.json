@@ -1,12 +1,26 @@
 {
   "manifest_version": 3,
-  "name": "N+1 LAB 采购助手 v7.4",
-  "version": "7.4",
-  "description": "人机协作版：Shuni 点击验证 + 插件自动填数量 + 循环处理",
+  "name": "N+1 LAB 采购助手 v7.7.1",
+  "version": "7.7.1",
+  "description": "采购自动化 + 淘宝订单字段提取增强版",
   "permissions": [
     "tabs",
     "storage",
-    "scripting"
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://*.taobao.com/*",
+    "https://*.tmall.com/*",
+    "https://buyertrade.taobao.com/*",
+    "https://trade.taobao.com/*",
+    "https://myseller.taobao.com/*",
+    "https://invoice.taobao.com/*",
+    "https://platform.nplusonelab.com/*",
+    "http://43.156.225.39:8080/*",
+    "http://localhost:8080/*",
+    "http://43.156.225.39:8000/*",
+    "http://localhost:8000/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -16,6 +30,10 @@
       "matches": [
         "https://*.taobao.com/*",
         "https://*.tmall.com/*",
+        "https://buyertrade.taobao.com/*",
+        "https://trade.taobao.com/*",
+        "https://myseller.taobao.com/*",
+        "https://invoice.taobao.com/*",
         "https://platform.nplusonelab.com/*",
         "http://43.156.225.39:8080/*",
         "http://localhost:8080/*",
@@ -32,7 +50,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["*.png", "*.html", "*.svg"],
+      "resources": ["*.png", "*.html", "*.svg", "popup.js"],
       "matches": ["<all_urls>"]
     }
   ]
