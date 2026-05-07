@@ -2516,30 +2516,58 @@ def list_taobao_orders(
             params["invoice_status"] = invoice_status
 
     rows = db.execute(text(f"""
-        SELECT taobao_order_no, order_time, seller_name, buyer_name, product_title, sku_text,
-               amount_text, amount_value, order_status, invoice_status, invoice_candidate,
-               source_page_url, last_synced_at
-        FROM taobao_orders
+        SELECT o.taobao_order_no, o.order_time, o.seller_name, o.buyer_name, o.product_title, o.sku_text,
+               o.amount_text, o.amount_value, o.order_status, o.invoice_status, o.invoice_candidate,
+               o.source_page_url, o.last_synced_at,
+               i.invoice_status AS linked_invoice_status,
+               i.download_status AS linked_download_status
+        FROM taobao_orders o
+        LEFT JOIN (
+            SELECT taobao_order_no, invoice_status, download_status, last_synced_at
+            FROM taobao_invoices ti1
+            WHERE id = (
+                SELECT id FROM taobao_invoices ti2
+                WHERE ti2.taobao_order_no = ti1.taobao_order_no
+                ORDER BY COALESCE(ti2.last_synced_at, '') DESC, ti2.id DESC
+                LIMIT 1
+            )
+        ) i ON i.taobao_order_no = o.taobao_order_no
         WHERE {' AND '.join(conditions)}
-        ORDER BY COALESCE(order_time, '') DESC, id DESC
+        ORDER BY COALESCE(o.order_time, '') DESC, o.id DESC
         LIMIT :limit
     """), params).fetchall()
 
-    return [{
-        "taobao_order_no": r[0],
-        "order_time": r[1] or "",
-        "seller_name": r[2] or "",
-        "buyer_name": r[3] or "",
-        "product_title": r[4] or "",
-        "sku_text": r[5] or "",
-        "amount_text": r[6] or "",
-        "amount_value": r[7] or 0,
-        "order_status": r[8] or "",
-        "invoice_status": r[9] or "未知",
-        "invoice_candidate": bool(r[10]),
-        "source_page_url": r[11] or "",
-        "last_synced_at": str(r[12]) if r[12] else ""
-    } for r in rows]
+    result = []
+    for r in rows:
+        order_invoice_status = r[9] or "未知"
+        linked_invoice_status = r[13] or ""
+        linked_download_status = r[14] or ""
+
+        merged_invoice_status = order_invoice_status
+        if linked_download_status == 'downloaded':
+            merged_invoice_status = '已下载'
+        elif linked_invoice_status in ('已开票', '开票中', '已下载'):
+            merged_invoice_status = linked_invoice_status
+
+        result.append({
+            "taobao_order_no": r[0],
+            "order_time": r[1] or "",
+            "seller_name": r[2] or "",
+            "buyer_name": r[3] or "",
+            "product_title": r[4] or "",
+            "sku_text": r[5] or "",
+            "amount_text": r[6] or "",
+            "amount_value": r[7] or 0,
+            "order_status": r[8] or "",
+            "invoice_status": merged_invoice_status,
+            "invoice_status_order": order_invoice_status,
+            "invoice_status_invoice": linked_invoice_status,
+            "invoice_download_status": linked_download_status,
+            "invoice_candidate": bool(r[10]),
+            "source_page_url": r[11] or "",
+            "last_synced_at": str(r[12]) if r[12] else ""
+        })
+    return result
 
 @app.post("/admin/taobao-invoices/sync")
 def sync_taobao_invoices(
@@ -2666,7 +2694,7 @@ def get_taobao_overview(
         SELECT COUNT(*),
                COALESCE(SUM(amount_value), 0),
                COALESCE(SUM(CASE WHEN invoice_candidate = 1 THEN 1 ELSE 0 END), 0),
-               COALESCE(SUM(CASE WHEN invoice_status = 'downloaded' THEN 1 ELSE 0 END), 0)
+               COALESCE(SUM(CASE WHEN invoice_status = '已下载' THEN 1 ELSE 0 END), 0)
         FROM taobao_orders
     """)).fetchone()
     invoice_stats = db.execute(text("""

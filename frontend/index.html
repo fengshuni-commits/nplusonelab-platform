@@ -3094,7 +3094,8 @@
                 }
                 tbody.innerHTML = rows.map(row => {
                     const invoiceStatus = row.invoice_status || '未知';
-                    const invoiceTag = row.invoice_candidate
+                    const showCandidateTag = row.invoice_candidate && !['已下载', '已开票', '开票中'].includes(invoiceStatus);
+                    const invoiceTag = showCandidateTag
                         ? '<span style="background:#fff7e6; color:#d46b08; padding:2px 8px; border-radius:4px; margin-right:6px;">可开票</span>'
                         : '';
                     const invoiceBadge = invoiceStatus === '已下载'
@@ -3103,7 +3104,9 @@
                             ? '<span style="background:#e6f4ff; color:#1677ff; padding:2px 8px; border-radius:4px;">已开票</span>'
                             : invoiceStatus === '开票中'
                                 ? '<span style="background:#fff7e6; color:#d46b08; padding:2px 8px; border-radius:4px;">开票中</span>'
-                                : `<span>${invoiceStatus}</span>`;
+                                : invoiceStatus === '可开票'
+                                    ? '<span style="background:#fff7e6; color:#d46b08; padding:2px 8px; border-radius:4px;">可开票</span>'
+                                    : `<span>${invoiceStatus}</span>`;
                     return `
                     <tr>
                         <td style="font-weight:bold; color:#1890ff;">${row.taobao_order_no}</td>
@@ -3138,7 +3141,7 @@
                         <td>${row.invoice_no || '-'}</td>
                         <td>${row.invoice_title || '-'}</td>
                         <td>¥${(row.invoice_amount_value || 0).toFixed(2)}</td>
-                        <td>${row.download_status === 'downloaded' ? '<span style="background:#f6ffed; color:#389e0d; padding:2px 8px; border-radius:4px;">已下载</span>' : (row.invoice_status || 'pending')}</td>
+                        <td>${row.download_status === 'downloaded' ? '<span style="background:#f6ffed; color:#389e0d; padding:2px 8px; border-radius:4px;">已下载</span>' : (row.invoice_status === '已开票' ? '<span style="background:#e6f4ff; color:#1677ff; padding:2px 8px; border-radius:4px;">已开票</span>' : (row.invoice_status === '开票中' ? '<span style="background:#fff7e6; color:#d46b08; padding:2px 8px; border-radius:4px;">开票中</span>' : (row.invoice_status || 'pending')))}</td>
                         <td>${row.file_url ? `<a href="${row.file_url}" target="_blank" style="color:#1890ff;">🔗 打开</a>` : '-'}</td>
                     </tr>
                 `).join('');

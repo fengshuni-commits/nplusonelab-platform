@@ -66,16 +66,26 @@ function uniqueTexts(list) {
 }
 
 function pickSellerName(el, text, links) {
+    const headerText = normalizeText((el.querySelector('thead, .order-head, .trade-order-main, [class*="header"], [class*="head"]')?.innerText) || '');
+    const headerMatch = headerText.match(/淘宝\s*([\u4e00-\u9fa5A-Za-z0-9·\-]{2,30})\s*(?:订单详情|卖家已发货|买家已付款|采购订单|$)/);
+    if (headerMatch && headerMatch[1] && !/订单详情|卖家已发货|旺旺在线/.test(headerMatch[1])) {
+        return normalizeText(headerMatch[1]);
+    }
+
+    const topRowTexts = uniqueTexts(collectTextCandidates(el, 'tr:first-child a, tr:first-child span, tr:first-child div, li:first-child a, li:first-child span, li:first-child div'));
+    const topRowShop = topRowTexts.find(t => t.length >= 2 && t.length <= 30 && !/订单号|淘宝|订单详情|卖家已发货|旺旺在线|采购订单|查看物流/.test(t));
+    if (topRowShop) return topRowShop;
+
     const headerTexts = uniqueTexts(collectTextCandidates(el, 'a, span, div'));
-    const exactShop = headerTexts.find(t => /旗舰店|企业店|专卖店|专营店|店铺|商行|五金|工具/.test(t) && t.length <= 30 && !/订单详情|订单号|卖家已发货|查看物流/.test(t));
+    const exactShop = headerTexts.find(t => /旗舰店|企业店|专卖店|专营店|店铺|商行|五金|工具|纸箱/.test(t) && t.length <= 30 && !/订单详情|订单号|卖家已发货|查看物流|旺旺在线/.test(t));
     if (exactShop) return exactShop;
 
     const directCandidates = uniqueTexts([
         ...collectTextCandidates(el, '.seller, .shop, [class*="seller"], [class*="shop"], [data-reactid*="shop"]'),
         ...headerTexts.filter(t => t.length <= 60)
-    ]).filter(t => !/订单号|官方客服|联系卖家|更多|删除订单|申请开票|查看物流|订单详情|卖家已发货|再买一单|手机订单/.test(t));
+    ]).filter(t => !/订单号|官方客服|联系卖家|更多|删除订单|申请开票|查看物流|订单详情|卖家已发货|再买一单|手机订单|旺旺在线|采购订单/.test(t));
 
-    const shopLike = directCandidates.filter(t => /旗舰店|企业店|专卖店|专营店|店铺|商行|五金|工具/.test(t));
+    const shopLike = directCandidates.filter(t => /旗舰店|企业店|专卖店|专营店|店铺|商行|五金|工具|纸箱/.test(t));
     if (shopLike.length) {
         return shopLike.sort((a, b) => a.length - b.length)[0];
     }
@@ -84,12 +94,13 @@ function pickSellerName(el, text, links) {
     }
 
     const patternValue = findTextByPatterns(text, [
+        /淘宝\s*([^\s]+)\s*订单详情/,
         /(?:店铺|店名|卖家)[:：]\s*([^\n\r]+?)(?:\s{2,}|订单号|商品|金额|状态|$)/,
         /(?:来自|商家)[:：]\s*([^\n\r]+?)(?:\s{2,}|订单号|商品|金额|状态|$)/
     ]);
-    if (patternValue) return patternValue;
+    if (patternValue && !/旺旺在线|订单详情|卖家已发货/.test(patternValue)) return patternValue;
 
-    return (links.find(a => /旗舰店|企业店|专卖店|专营店|店铺|商行|五金|工具/.test(a.text))?.text || '').slice(0, 100);
+    return (links.find(a => /旗舰店|企业店|专卖店|专营店|店铺|商行|五金|工具|纸箱/.test(a.text))?.text || '').slice(0, 100);
 }
 
 function pickProductTitle(el, text) {
