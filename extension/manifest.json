@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "N+1 LAB 采购助手 v7.7.1",
-  "version": "7.7.1",
+  "name": "N+1 LAB 采购助手 v7.7.2",
+  "version": "7.7.2",
   "description": "采购自动化 + 淘宝订单字段提取增强版",
   "permissions": [
     "tabs",
@@ -40,7 +40,9 @@
         "http://43.156.225.39:8000/*",
         "http://localhost:8000/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_end"
     }
   ],
@@ -50,8 +52,15 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["*.png", "*.html", "*.svg", "popup.js"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "*.png",
+        "*.html",
+        "*.svg",
+        "popup.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
