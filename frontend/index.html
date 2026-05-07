@@ -122,6 +122,10 @@
                 <span>🔍</span>
                 <span class="nav-text">采购查询</span>
             </div>
+            <div class="nav-item" onclick="switchTab('taobao-sync', this)">
+                <span>🧾</span>
+                <span class="nav-text">淘宝同步</span>
+            </div>
         </div>
 
         <!-- 退出登录按钮 -->
@@ -480,9 +484,114 @@
             </div>
         </div>
 
-        <!-- BOM 编辑弹窗 -->
-        <div id="bom-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1200px; max-height:85vh; background:white; z-index:2000; padding:28px; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,0.2); overflow-y:auto;">
-            <h3 id="bom-title" style="margin-bottom:20px;">物料清单</h3>
+        <!-- 淘宝订单/发票同步 -->
+        <div id="view-taobao-sync" style="display:none;">
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:15px; margin-bottom:24px;">
+                <div style="background:linear-gradient(135deg, #fa8c16 0%, #fa541c 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">淘宝订单数</div>
+                    <div id="tb-stat-orders" style="font-size:28px; font-weight:bold; margin-top:5px;">0</div>
+                </div>
+                <div style="background:linear-gradient(135deg, #13c2c2 0%, #08979c 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">订单总金额</div>
+                    <div id="tb-stat-amount" style="font-size:28px; font-weight:bold; margin-top:5px;">¥0</div>
+                </div>
+                <div style="background:linear-gradient(135deg, #722ed1 0%, #531dab 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">可开票订单</div>
+                    <div id="tb-stat-candidate" style="font-size:28px; font-weight:bold; margin-top:5px;">0</div>
+                </div>
+                <div style="background:linear-gradient(135deg, #52c41a 0%, #389e0d 100%); padding:20px; border-radius:8px; color:white; text-align:center;">
+                    <div style="font-size:12px; opacity:0.9;">已下载发票</div>
+                    <div id="tb-stat-downloaded" style="font-size:28px; font-weight:bold; margin-top:5px;">0</div>
+                </div>
+            </div>
+
+            <div class="table-container" style="margin-bottom:24px;">
+                <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px;">
+                    <div>
+                        <h3 style="margin-bottom:6px;">🧾 淘宝订单同步</h3>
+                        <div style="font-size:13px; color:#8c8c8c;">在淘宝订单页点同步，把订单拉进后台；自动标记可开票订单。</div>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn" onclick="syncCurrentTaobaoOrders()" style="background:#722ed1; color:white; border:none;">📥 同步当前淘宝订单页</button>
+                        <button class="btn" onclick="loadTaobaoSyncData()">🔄 刷新数据</button>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
+                    <input type="text" id="tb-order-search" placeholder="搜索订单号/商品/店铺" style="padding:8px 12px; border:1px solid #d9d9d9; border-radius:4px; width:240px;">
+                    <select id="tb-order-filter" style="padding:8px 12px; border:1px solid #d9d9d9; border-radius:4px;">
+                        <option value="">全部订单</option>
+                        <option value="candidate">仅可开票</option>
+                        <option value="issued">已开票/已下载</option>
+                        <option value="processing">开票中</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="loadTaobaoOrdersTable()" style="background:#1890ff; color:white; border:none;">查询</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>淘宝订单号</th>
+                            <th>下单时间</th>
+                            <th>店铺</th>
+                            <th>商品</th>
+                            <th>金额</th>
+                            <th>订单状态</th>
+                            <th>开票状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-orders-body">
+                        <tr><td colspan="7" style="text-align:center; padding:32px; color:#8c8c8c;">点击同步或刷新加载数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-container">
+                <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-bottom:18px;">
+                    <div>
+                        <h3 style="margin-bottom:6px;">📄 发票下载记录</h3>
+                        <div style="font-size:13px; color:#8c8c8c;">在淘宝发票页点同步，把已开票记录和下载链接拉进后台。</div>
+                    </div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn" onclick="syncCurrentInvoicePage()" style="background:#13c2c2; color:white; border:none;">🧾 同步当前发票页</button>
+                        <button class="btn" onclick="loadTaobaoInvoicesTable()">🔄 刷新发票</button>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>关联订单号</th>
+                            <th>发票号</th>
+                            <th>抬头</th>
+                            <th>金额</th>
+                            <th>状态</th>
+                            <th>下载</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tb-invoices-body">
+                        <tr><td colspan="6" style="text-align:center; padding:32px; color:#8c8c8c;">点击同步或刷新加载发票数据</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- BOM / 采购清单 编辑弹窗 -->
+        <div id="bom-modal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:95%; max-width:1280px; max-height:88vh; background:white; z-index:2000; padding:28px; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,0.2); overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-bottom:16px;">
+                <div>
+                    <h3 id="bom-title" style="margin-bottom:8px;">物料清单</h3>
+                    <div id="bom-subtitle" style="font-size:13px; color:#8c8c8c;">支持手动编辑、版本保存与回滚</div>
+                </div>
+                <div id="bom-version-panel" style="min-width:280px; max-width:340px; background:#fafafa; border:1px solid #f0f0f0; border-radius:10px; padding:12px 14px;">
+                    <div style="font-weight:bold; margin-bottom:8px;">🕘 版本记录</div>
+                    <div id="bom-version-list" style="font-size:12px; color:#595959; max-height:180px; overflow:auto;">暂无版本</div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:12px; margin-bottom:14px; align-items:center; flex-wrap:wrap;">
+                <input id="bom-save-note" type="text" placeholder="保存备注（可选）" style="flex:1; min-width:260px; padding:10px 12px; border:1px solid #d9d9d9; border-radius:8px;">
+                <div id="bom-dirty-indicator" style="display:none; color:#d46b08; font-size:13px; font-weight:bold;">● 有未保存修改</div>
+                <div id="bom-summary" style="margin-left:auto; color:#262626; font-size:13px;">合计：¥0.00</div>
+            </div>
+
             <table style="width:100%; border-collapse:collapse; font-size:13px;">
                 <thead>
                     <tr style="background:#fafafa;">
@@ -493,15 +602,17 @@
                         <th style="padding:8px; text-align:left;">单价</th>
                         <th style="padding:8px; text-align:left;">小计</th>
                         <th style="padding:8px; text-align:left;">链接</th>
+                        <th style="padding:8px; text-align:left;">备注</th>
                         <th style="padding:8px; text-align:center;">操作</th>
                     </tr>
                 </thead>
                 <tbody id="bom-body"></tbody>
             </table>
-            <div style="margin-top:16px; display:flex; gap:10px;">
-                <button onclick="addBOMRow()" class="btn" style="flex:1; border-style:dashed; color:#1890ff;">➕ 新增零部件</button>
-                <button onclick="saveBOMEditor()" class="btn btn-success" style="flex:1; background:#52c41a; color:white; border:none;">💾 保存</button>
-                <button onclick="closeModal()" class="btn" style="flex:1;">关闭</button>
+            <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+                <button onclick="addBOMRow()" class="btn" style="flex:1; min-width:160px; border-style:dashed; color:#1890ff;">➕ 新增零部件</button>
+                <button onclick="saveBOMEditor()" class="btn btn-success" style="flex:1; min-width:160px; background:#52c41a; color:white; border:none;">💾 保存</button>
+                <button onclick="closeModal(true)" class="btn" style="flex:1; min-width:160px;">先不保存，退出</button>
+                <button onclick="closeModal(false)" class="btn" style="flex:1; min-width:160px;">关闭</button>
             </div>
         </div>
 
@@ -882,6 +993,7 @@
             document.getElementById('view-dealers').style.display = 'none';
             document.getElementById('view-users').style.display = 'none';
             document.getElementById('view-procurement').style.display = 'none';
+            document.getElementById('view-taobao-sync').style.display = 'none';
 
             document.getElementById('view-' + tabId).style.display = 'block';
 
@@ -892,6 +1004,7 @@
             if(tabId === 'orders') loadOrders();
             if(tabId === 'dashboard') loadDashboardStats();
             if(tabId === 'procurement') loadProcurementQuery();
+            if(tabId === 'taobao-sync') loadTaobaoSyncData();
             if(tabId === 'products') loadProducts();
             if(tabId === 'dealers') loadDealers();
             if(tabId === 'users') loadUsers();
@@ -960,7 +1073,10 @@
                 
             } catch (e) {
                 console.error('加载数据看板失败:', e);
-                alert('加载数据看板失败，请检查网络连接');
+                const el = document.getElementById('status-breakdown');
+                if (el) {
+                    el.innerHTML = '<div style="grid-column:1/-1; color:#fa8c16; font-size:12px; text-align:center; padding:8px 0;">数据看板暂时未刷新，不影响订单和产品操作</div>';
+                }
             }
         }
         
@@ -1233,7 +1349,7 @@
                         <td style="border-top:2px solid #f0f0f0;">
                             <div style="text-align:center;">
                                 <div style="font-size:13px; font-weight:bold; color:#1890ff;">${p.kit_stock_quantity || 0}</div>
-                                <div style="font-size:11px; color:#8c8c8c;">零件包</div>
+                                <div style="font-size:11px; color:#8c8c8c;">${p.inventory_group_code ? '共享零件包' : '零件包'}</div>
                             </div>
                             <div style="text-align:center; margin-top:4px;">
                                 <div style="font-size:13px; font-weight:bold; color:#722ed1;">${p.stock_quantity || 0}</div>
@@ -1245,7 +1361,7 @@
                                 ${bomBtn}
                                 <button class="btn" onclick="openBOMEditor(${p.id}, '${p.product_name}')" style="padding:4px 10px; font-size:12px; white-space:nowrap; background:#722ed1; color:white; border:none;">✏️ 编辑 BOM</button>
                                 <button class="btn" onclick="editPrice(${p.id}, '${p.sku_code}', ${p.dealer_price}, ${p.retail_price})" style="padding:4px 10px; font-size:12px; white-space:nowrap;">✏️ 改价</button>
-                                <button class="btn" onclick="editStock(${p.id}, '${p.sku_code}', ${p.kit_stock_quantity || 0}, ${p.stock_quantity || 0})" style="padding:4px 10px; font-size:12px; white-space:nowrap;">📦 库存</button>
+                                <button class="btn" onclick="editStock(${p.id}, '${p.sku_code}', ${p.kit_stock_quantity || 0}, ${p.stock_quantity || 0}, ${p.inventory_group_code ? `'${p.inventory_group_code}'` : 'null'})" style="padding:4px 10px; font-size:12px; white-space:nowrap;">📦 库存</button>
                             </div>
                         </td>
                     </tr>
@@ -1483,9 +1599,21 @@
             });
         }
 
-        function closeModal() {
+        function closeModal(forceClose = false) {
+            if (!forceClose && bomEditorDirty) {
+                const ok = confirm('当前有未保存修改，确定直接关闭吗？');
+                if (!ok) return;
+            }
             document.getElementById('bom-modal').style.display = 'none';
             document.getElementById('modal-mask').style.display = 'none';
+            document.getElementById('bom-body').innerHTML = '';
+            document.getElementById('bom-save-note').value = '';
+            document.getElementById('bom-version-list').innerHTML = '暂无版本';
+            document.getElementById('bom-summary').innerText = '合计：¥0.00';
+            currentEditBOMProductId = null;
+            currentEditOrderId = null;
+            currentEditorMode = null;
+            setBOMDirty(false);
         }
 
         // ==================== 价格编辑功能 ====================
@@ -1553,13 +1681,14 @@
         // ==================== 库存编辑功能 ====================
         let currentEditStockProductId = null;
 
-        function editStock(pid, sku, kitStock, productStock) {
+        function editStock(pid, sku, kitStock, productStock, inventoryGroupCode = null) {
             currentEditStockProductId = pid;
             const body = document.getElementById('stock-body');
             body.innerHTML = `
                 <div style="margin-bottom:15px;">
                     <div style="font-size:14px; color:#8c8c8c; margin-bottom:5px;">产品</div>
                     <div style="font-size:16px; font-weight:bold;">${sku}</div>
+                    <div id="stock-group-tip" style="font-size:12px; color:#8c8c8c; margin-top:4px;">零件包库存</div>
                 </div>
                 <div style="margin-bottom:20px;">
                     <label style="display:block; margin-bottom:8px; font-weight:500;">📦 零件包库存</label>
@@ -1576,6 +1705,10 @@
             `;
             document.getElementById('stock-modal').style.display = 'block';
             document.getElementById('modal-mask').style.display = 'flex';
+            const tip = document.getElementById('stock-group-tip');
+            if (tip && inventoryGroupCode) {
+                tip.innerText = `共享库存组：${inventoryGroupCode}`;
+            }
         }
 
         async function saveStock() {
@@ -2183,7 +2316,7 @@
                         ${partsHtml}
 
                         <div style="margin-top:25px; padding-top:20px; border-top:2px solid #f0f0f0;">
-                            <div style="background:#f5f5f5; padding:15px; border-radius:6px; margin-bottom:20px; font-size:13px;">
+                            <div style="background:#f5f5f5; padding:15px; border-radius:6px; margin-bottom:16px; font-size:13px;">
                                 <strong>⚠️ 采购前请确认:</strong>
                                 <ul style="margin:10px 0 0 20px; line-height:1.8;">
                                     <li>已安装 N+1 采购插件 v7.4+</li>
@@ -2193,8 +2326,19 @@
                                 </ul>
                             </div>
 
+                            <div style="background:#f0f5ff; border:1px solid #d6e4ff; padding:14px 16px; border-radius:8px; margin-bottom:20px;">
+                                <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                                    <input type="checkbox" id="use-kit-stock-first" style="margin-top:3px;">
+                                    <div>
+                                        <div style="font-weight:bold; color:#262626;">优先调用零件包库存</div>
+                                        <div style="font-size:12px; color:#8c8c8c; margin-top:4px;">如果当前订单对应 SKU 的零件包库存足够，就直接扣减库存，不走淘宝采购。</div>
+                                    </div>
+                                </label>
+                            </div>
+
                             <div style="display:flex; gap:10px;">
-                                <button onclick="confirmOrderParts(${orderId}, '${order.order_no}')" class="btn btn-success" style="flex:1; padding:12px; font-size:16px; background:#52c41a; color:white; border:none;">✅ 确认采购</button>
+                                <button onclick="confirmOrderParts(${orderId}, '${order.order_no}', ${productId === null || productId === undefined || productId === 'null' ? 'null' : productId}, ${orderQuantity})" class="btn btn-success" style="flex:1; padding:12px; font-size:16px; background:#52c41a; color:white; border:none;">✅ 继续</button>
+                                <button onclick="abandonPurchaseFlow()" class="btn" style="flex:1; padding:12px; font-size:16px; background:#fff1f0; color:#cf1322; border:1px solid #ffa39e;">🛑 放弃采购</button>
                                 <button onclick="closeOrderPartsModal()" class="btn" style="flex:1; padding:12px; font-size:16px;">❌ 取消</button>
                             </div>
                         </div>
@@ -2217,23 +2361,52 @@
         }
 
         // 确认采购(在弹窗中点击确认后调用)
-        function confirmOrderParts(orderId, orderNo) {
+        async function confirmOrderParts(orderId, orderNo, productId, orderQuantity) {
             const partsList = window.currentPartsList;
             if (!partsList || partsList.length === 0) {
                 alert('❌ 采购清单为空');
                 return;
             }
 
-            // 关闭零件列表弹窗
-            closeOrderPartsModal();
+            const useKitStockFirst = !!document.getElementById('use-kit-stock-first')?.checked;
 
-            // 构建采购请求
+            // 方案 A：优先调用零件包库存
+            if (useKitStockFirst) {
+                if (!productId || productId === 'null' || productId === 'undefined') {
+                    alert('❌ 当前订单没有关联 SKU，无法调用库存');
+                    return;
+                }
+                try {
+                    const resp = await fetch(`${API_BASE}/admin/orders/${orderId}/allocate-kit`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-API-Key': 'n1lab2026'
+                        },
+                        body: JSON.stringify({ product_id: productId, quantity: orderQuantity || 1 })
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && data.status === 'success') {
+                        closeOrderPartsModal();
+                        alert(`✅ 已优先调用零件包库存\n\n${data.message}\n共享库存剩余：${data.shared_stock_after ?? data.kit_stock_after}\n扣减明细：${(data.deduction_logs || []).join('，')}`);
+                        try { if (typeof loadOrders === 'function') await loadOrders(); } catch (e) { console.warn('reload orders failed', e); }
+                        try { if (typeof loadProducts === 'function') await loadProducts(); } catch (e) { console.warn('reload products failed', e); }
+                        return;
+                    }
+                    alert(data.detail || data.message || '库存调用失败，将改为走采购流程');
+                } catch (e) {
+                    console.error('调用库存失败:', e);
+                    alert('库存调用失败，将继续走采购流程');
+                }
+            }
+
+            // 方案 B：走淘宝采购插件
+            closeOrderPartsModal();
             const purchasePayload = partsList.map(p => ({
                 link: p.link,
                 quantity: p.quantity
             }));
 
-            // 使用最新的 v7.4/v7.5 postMessage 协议来与 Chrome 插件通讯激活批量自动化采购
             window.postMessage({
                 action: "N1_START_PURCHASE",
                 items: purchasePayload
@@ -2241,7 +2414,6 @@
 
             console.log('📦 发送至插件的采购清单:', purchasePayload);
 
-            // 更新订单状态为"进行中"
             fetch(`${API_BASE}/orders/${orderId}/status`, {
                 method: 'PUT',
                 headers: {
@@ -2250,10 +2422,9 @@
                 },
                 body: JSON.stringify({ status: 'processing' })
             }).then(() => {
-                loadOrders(); // 刷新背景列表
+                loadOrders();
             }).catch(e => console.error('更新订单状态失败:', e));
 
-            // 显示要求录入“实际采购成本”的弹窗
             renderConfirmOrderPurchase(orderId, orderNo, partsList);
         }
 
@@ -2297,6 +2468,9 @@
                                 <button class="btn btn-success" onclick="finishOrderPurchase(${orderId}, '${encodeURIComponent(JSON.stringify(partsList))}')"
                                     style="padding:15px; font-size:16px; font-weight:bold; background:#52c41a; border:none; border-radius:8px; box-shadow:0 4px 12px rgba(82,196,26,0.3); color:white; cursor:pointer;">
                                     ✅ 确认已采购完成
+                                </button>
+                                <button class="btn" onclick="abandonPurchaseFlow()" style="padding:12px; background:#fff1f0; border:1px solid #ffa39e; border-radius:8px; color:#cf1322; cursor:pointer;">
+                                    🛑 放弃采购
                                 </button>
                                 <button class="btn" onclick="closeOrderCostModal()" style="padding:12px; background:none; border:1px solid #d9d9d9; border-radius:8px; color:#8c8c8c; cursor:pointer;">
                                     稍后手动输入
@@ -2344,6 +2518,22 @@
             const mask = document.getElementById('order-cost-mask');
             if(modal) modal.remove();
             if(mask) mask.remove();
+        }
+
+        function sendStopPurchaseSignal() {
+            try {
+                window.postMessage({ action: "N1_STOP_PURCHASE" }, "*");
+            } catch (e) {
+                console.warn('发送停止采购信号失败:', e);
+            }
+        }
+
+        function abandonPurchaseFlow() {
+            sendStopPurchaseSignal();
+            closeOrderPartsModal();
+            closeOrderCostModal();
+            window.currentPartsList = null;
+            alert('✅ 已放弃本次采购，不会继续加购，也不会写入采购记录。');
         }
 
         // 关闭采购弹窗
@@ -2524,67 +2714,169 @@
         restoreSidebarState();
         loadStats();
 
-        // ==================== BOM 编辑器 ====================
+        // ==================== BOM / 采购清单 编辑器 ====================
         let currentEditBOMProductId = null;
+        let currentEditOrderId = null;
+        let currentEditorMode = null;
+        let bomEditorDirty = false;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setBOMDirty(dirty = true) {
+            bomEditorDirty = dirty;
+            document.getElementById('bom-dirty-indicator').style.display = dirty ? 'block' : 'none';
+        }
+
+        function updateBOMSummary() {
+            const rows = document.getElementById('bom-body').querySelectorAll('tr');
+            let total = 0;
+            rows.forEach(row => {
+                const totalInput = row.querySelector('input[data-field="total_cost"]');
+                total += parseFloat(totalInput?.value || 0) || 0;
+            });
+            document.getElementById('bom-summary').innerText = `合计：¥${total.toFixed(2)}`;
+        }
+
+        function renderVersionList(versions = [], type = 'bom') {
+            const el = document.getElementById('bom-version-list');
+            if (!versions.length) {
+                el.innerHTML = '<div style="color:#8c8c8c;">暂无版本</div>';
+                return;
+            }
+            el.innerHTML = versions.map(v => `
+                <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px dashed #e8e8e8;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:bold; color:#262626;">v${v.version_no}</div>
+                        <div style="color:#595959; word-break:break-word;">${escapeHtml(v.note || '无备注')}</div>
+                        <div style="color:#bfbfbf; margin-top:2px;">${escapeHtml(v.created_at || '')}</div>
+                    </div>
+                    <button class="btn" style="padding:4px 8px; font-size:12px; white-space:nowrap;" onclick="rollbackEditorVersion('${type}', ${v.id})">回滚</button>
+                </div>
+            `).join('');
+        }
+
+        function buildEditorRow(item = {}, isProcurement = false) {
+            const quantity = item.quantity ?? '';
+            const purchaseQuantity = item.purchase_quantity ?? '';
+            const estimatedCost = item.estimated_cost ?? item.unit_cost ?? 0;
+            const totalCost = item.total_cost ?? 0;
+            const link = item.link ?? item.taobao_link ?? '';
+            const remark = item.remark ?? '';
+            return `<tr>
+                <td><input type="text" value="${escapeHtml(item.part_name || '')}" data-field="part_name" style="width:100%; padding:6px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="${escapeHtml(item.specs || '')}" data-field="specs" style="width:100%; padding:6px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="${escapeHtml(quantity)}" data-field="quantity" style="width:72px; padding:6px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="${escapeHtml(purchaseQuantity)}" data-field="purchase_quantity" style="width:72px; padding:6px; border:1px solid #d9d9d9; border-radius:4px;" ${isProcurement ? 'placeholder="-"' : ''}></td>
+                <td><input type="number" step="0.01" value="${escapeHtml(estimatedCost)}" data-field="estimated_cost" style="width:88px; padding:6px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="number" step="0.01" value="${escapeHtml(totalCost)}" data-field="total_cost" style="width:88px; padding:6px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="${escapeHtml(link)}" data-field="link" style="width:100%; padding:6px; border:1px solid #d9d9d9; border-radius:4px;"></td>
+                <td><input type="text" value="${escapeHtml(remark)}" data-field="remark" style="width:100%; padding:6px; border:1px solid #d9d9d9; border-radius:4px;" ${isProcurement ? 'placeholder="采购备注"' : 'placeholder="备注，如零件包/N+1"'}></td>
+                <td><button onclick="this.closest('tr').remove(); setBOMDirty(true); updateBOMSummary();" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
+            </tr>`;
+        }
+
+        function attachBOMEditorListeners() {
+            const body = document.getElementById('bom-body');
+            body.querySelectorAll('input').forEach(input => {
+                input.addEventListener('input', () => {
+                    setBOMDirty(true);
+                    updateBOMSummary();
+                });
+            });
+        }
+
+        function collectEditorItems() {
+            const rows = document.getElementById('bom-body').querySelectorAll('tr');
+            return Array.from(rows).map(row => {
+                const get = (field) => row.querySelector(`input[data-field="${field}"]`)?.value || '';
+                return {
+                    part_name: get('part_name'),
+                    specs: get('specs'),
+                    quantity: get('quantity'),
+                    purchase_quantity: get('purchase_quantity'),
+                    estimated_cost: parseFloat(get('estimated_cost')) || 0,
+                    total_cost: parseFloat(get('total_cost')) || 0,
+                    link: get('link'),
+                    remark: get('remark')
+                };
+            });
+        }
+
+        function showEditorModal() {
+            document.getElementById('bom-modal').style.display = 'block';
+            document.getElementById('modal-mask').style.display = 'block';
+            attachBOMEditorListeners();
+            updateBOMSummary();
+            setBOMDirty(false);
+        }
+
         async function openBOMEditor(productId, productName) {
             currentEditBOMProductId = productId;
+            currentEditOrderId = null;
+            currentEditorMode = 'bom';
             try {
                 const resp = await fetch(`${API_BASE}/admin/products/${productId}/bom-editor`, { headers: { 'X-API-Key': 'n1lab2026' } });
                 const data = await resp.json();
                 if (!resp.ok) { alert(data.detail || '加载失败'); return; }
 
                 document.getElementById('bom-title').innerText = `✏️ BOM 编辑 - ${data.product.sku_code} ${data.product.product_name}`;
+                document.getElementById('bom-subtitle').innerText = '产品中心 → BOM 编辑页，可手动增删改、保存版本、回滚';
+                document.getElementById('bom-save-note').value = '';
                 const body = document.getElementById('bom-body');
-                body.innerHTML = data.items.map((item, idx) => `<tr>
-                    <td><input type="text" value="${item.part_name || ''}" data-field="part_name" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.specs || ''}" data-field="specs" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.quantity || ''}" data-field="quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.purchase_quantity || ''}" data-field="purchase_quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="number" value="${item.estimated_cost || 0}" data-field="estimated_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="number" value="${item.total_cost || 0}" data-field="total_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.link || ''}" data-field="link" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><button onclick="this.closest('tr').remove()" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
-                </tr>`).join('');
-
-                // 显示弹窗
-                document.getElementById('bom-modal').style.display = 'block';
-                document.getElementById('modal-mask').style.display = 'block';
+                body.innerHTML = (data.items || []).map(item => buildEditorRow(item, false)).join('');
+                renderVersionList(data.versions || [], 'bom');
+                showEditorModal();
             } catch (e) { alert('加载BOM失败: ' + e.message); }
         }
 
         function addBOMRow() {
             const body = document.getElementById('bom-body');
-            const idx = body.rows.length;
-            body.innerHTML += `<tr>
-                <td><input type="text" value="" data-field="part_name" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><input type="text" value="" data-field="specs" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><input type="text" value="" data-field="quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><input type="text" value="" data-field="purchase_quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><input type="number" value="0" data-field="estimated_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><input type="number" value="0" data-field="total_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><input type="text" value="" data-field="link" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                <td><button onclick="this.closest('tr').remove()" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
-            </tr>`;
+            body.insertAdjacentHTML('beforeend', buildEditorRow({}, currentEditorMode === 'procurement'));
+            attachBOMEditorListeners();
+            setBOMDirty(true);
+            updateBOMSummary();
+        }
+
+        async function rollbackEditorVersion(type, versionId) {
+            if (!confirm('确认回滚到这个版本吗？当前内容会被覆盖。')) return;
+            try {
+                let url = '';
+                if (type === 'bom' && currentEditBOMProductId) {
+                    url = `${API_BASE}/admin/products/${currentEditBOMProductId}/bom-editor/rollback/${versionId}`;
+                } else if (type === 'procurement' && currentEditOrderId) {
+                    url = `${API_BASE}/admin/orders/${currentEditOrderId}/procurement-editor/rollback/${versionId}`;
+                } else {
+                    alert('当前没有可回滚的编辑对象');
+                    return;
+                }
+                const resp = await fetch(url, { method: 'POST', headers: { 'X-API-Key': 'n1lab2026' } });
+                const data = await resp.json();
+                if (!resp.ok) { alert(data.detail || '回滚失败'); return; }
+                alert(`✅ 已回滚，当前新版本 v${data.version_no}`);
+                if (type === 'bom') {
+                    openBOMEditor(currentEditBOMProductId);
+                    loadProducts();
+                } else {
+                    openOrderProcurementEditor(currentEditOrderId);
+                    loadOrders();
+                }
+            } catch (e) {
+                alert('回滚失败: ' + e.message);
+            }
         }
 
         async function saveBOMEditor() {
-            const rows = document.getElementById('bom-body').querySelectorAll('tr');
-            const items = Array.from(rows).map(row => {
-                const inputs = row.querySelectorAll('input');
-                return {
-                    part_name: inputs[0].value,
-                    specs: inputs[1].value,
-                    quantity: inputs[2].value,
-                    purchase_quantity: inputs[3].value,
-                    estimated_cost: parseFloat(inputs[4].value) || 0,
-                    total_cost: parseFloat(inputs[5].value) || 0,
-                    link: inputs[6].value
-                };
-            });
+            const items = collectEditorItems();
+            const note = document.getElementById('bom-save-note').value.trim();
 
-            // 判断当前是 BOM 编辑还是采购清单编辑
             if (currentEditOrderId) {
-                // 采购清单编辑 - 调用订单采购清单端点
                 const procItems = items.map(i => ({
                     part_name: i.part_name,
                     specs: i.specs,
@@ -2598,31 +2890,28 @@
                     const resp = await fetch(`${API_BASE}/admin/orders/${currentEditOrderId}/procurement-editor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-API-Key': 'n1lab2026' },
-                        body: JSON.stringify({ items: procItems, note: '采购清单编辑保存' })
+                        body: JSON.stringify({ items: procItems, note: note || '采购清单编辑保存' })
                     });
                     const data = await resp.json();
                     if (resp.ok) {
-                        alert('✅ 采购清单保存成功！');
-                        document.getElementById('bom-modal').style.display = 'none';
-                        document.getElementById('modal-mask').style.display = 'none';
-                        currentEditOrderId = null;
+                        alert(`✅ 采购清单保存成功！版本 v${data.version_no}`);
+                        setBOMDirty(false);
+                        closeModal(true);
                         loadOrders();
                     } else { alert(data.detail || '保存失败'); }
                 } catch (e) { alert('保存失败: ' + e.message); }
             } else if (currentEditBOMProductId) {
-                // BOM 编辑 - 调用产品 BOM 端点
                 try {
                     const resp = await fetch(`${API_BASE}/admin/products/${currentEditBOMProductId}/bom-editor`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-API-Key': 'n1lab2026' },
-                        body: JSON.stringify({ items, note: 'BOM编辑保存' })
+                        body: JSON.stringify({ items, note: note || 'BOM编辑保存' })
                     });
                     const data = await resp.json();
                     if (resp.ok) {
-                        alert('✅ BOM 保存成功！已创建新版本');
-                        document.getElementById('bom-modal').style.display = 'none';
-                        document.getElementById('modal-mask').style.display = 'none';
-                        currentEditBOMProductId = null;
+                        alert(`✅ BOM 保存成功！版本 v${data.version_no}`);
+                        setBOMDirty(false);
+                        closeModal(true);
                         loadProducts();
                     } else { alert(data.detail || '保存失败'); }
                 } catch (e) { alert('保存失败: ' + e.message); }
@@ -2631,30 +2920,22 @@
             }
         }
 
-        // ==================== 订单采购清单编辑器 ====================
-        let currentEditOrderId = null;
         async function openOrderProcurementEditor(orderId) {
             currentEditOrderId = orderId;
+            currentEditBOMProductId = null;
+            currentEditorMode = 'procurement';
             try {
                 const resp = await fetch(`${API_BASE}/admin/orders/${orderId}/procurement-editor`, { headers: { 'X-API-Key': 'n1lab2026' } });
                 const data = await resp.json();
                 if (!resp.ok) { alert(data.detail || '加载失败'); return; }
 
                 document.getElementById('bom-title').innerText = `✏️ 采购清单编辑 - 订单 #${orderId}`;
+                document.getElementById('bom-subtitle').innerText = '订单管理 → 零部件下单前编辑采购清单，可保存版本与回滚';
+                document.getElementById('bom-save-note').value = '';
                 const body = document.getElementById('bom-body');
-                body.innerHTML = (data.items || []).map((item, idx) => `<tr>
-                    <td><input type="text" value="${item.part_name || ''}" data-field="part_name" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.specs || ''}" data-field="specs" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.quantity || ''}" data-field="quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.purchase_quantity || ''}" data-field="purchase_quantity" data-idx="${idx}" style="width:60px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="number" value="${item.estimated_cost || item.unit_cost || 0}" data-field="estimated_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="number" value="${item.total_cost || 0}" data-field="total_cost" data-idx="${idx}" style="width:70px; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><input type="text" value="${item.link || item.taobao_link || ''}" data-field="link" data-idx="${idx}" style="width:100%; padding:4px; border:1px solid #d9d9d9; border-radius:4px;"></td>
-                    <td><button onclick="this.closest('tr').remove()" style="background:#ff4d4f; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">✖</button></td>
-                </tr>`).join('');
-
-                document.getElementById('bom-modal').style.display = 'block';
-                document.getElementById('modal-mask').style.display = 'block';
+                body.innerHTML = (data.items || []).map(item => buildEditorRow(item, true)).join('');
+                renderVersionList(data.versions || [], 'procurement');
+                showEditorModal();
             } catch (e) { alert('加载采购清单失败: ' + e.message); }
         }
 
@@ -2745,6 +3026,138 @@
             document.getElementById('proc-start-date').value = '';
             document.getElementById('proc-end-date').value = '';
             loadProcurementQuery();
+        }
+
+        // ==================== 淘宝同步 MVP ====================
+        window.addEventListener('message', (event) => {
+            if (!event.data) return;
+            if (event.data.action === 'N1_CAPTURE_TAOBAO_ORDERS_RESULT') {
+                const payload = event.data.payload || {};
+                if (payload.error) alert('❌ 淘宝订单同步失败：' + payload.error);
+                else alert(`✅ 淘宝订单已同步 ${payload.synced || 0} 条`);
+                setTimeout(() => loadTaobaoSyncData(true), 300);
+            }
+            if (event.data.action === 'N1_CAPTURE_INVOICE_PAGE_RESULT') {
+                const payload = event.data.payload || {};
+                if (payload.error) alert('❌ 发票同步失败：' + payload.error);
+                else alert(`✅ 发票已同步 ${payload.synced || 0} 条`);
+                setTimeout(() => loadTaobaoSyncData(true), 300);
+            }
+        });
+
+        async function loadTaobaoSyncData(force = false) {
+            if (force) {
+                const orderBody = document.getElementById('tb-orders-body');
+                const invoiceBody = document.getElementById('tb-invoices-body');
+                if (orderBody) orderBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:#8c8c8c;">正在刷新订单数据...</td></tr>';
+                if (invoiceBody) invoiceBody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:32px; color:#8c8c8c;">正在刷新发票数据...</td></tr>';
+            }
+            await Promise.all([
+                loadTaobaoOverview(force),
+                loadTaobaoOrdersTable(force),
+                loadTaobaoInvoicesTable(force)
+            ]);
+        }
+
+        async function loadTaobaoOverview(force = false) {
+            try {
+                const url = force ? `${API_BASE}/admin/taobao-overview?_t=${Date.now()}` : `${API_BASE}/admin/taobao-overview`;
+                const resp = await fetch(url, { headers: { 'X-API-Key': 'n1lab2026' }, cache: 'no-store' });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || '加载失败');
+                document.getElementById('tb-stat-orders').innerText = data.orders_total || 0;
+                document.getElementById('tb-stat-amount').innerText = `¥${(data.orders_amount_total || 0).toFixed(2)}`;
+                document.getElementById('tb-stat-candidate').innerText = data.invoice_candidate_count || 0;
+                document.getElementById('tb-stat-downloaded').innerText = data.invoices_downloaded_count || data.orders_downloaded_count || 0;
+            } catch (e) {
+                console.error('加载淘宝概览失败:', e);
+            }
+        }
+
+        async function loadTaobaoOrdersTable(force = false) {
+            const search = document.getElementById('tb-order-search')?.value || '';
+            const filter = document.getElementById('tb-order-filter')?.value || '';
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (filter === 'candidate') params.append('invoice_candidate', 'true');
+            if (filter === 'issued') params.append('invoice_status', '已开票');
+            if (filter === 'processing') params.append('invoice_status', '开票中');
+            if (force) params.append('_t', Date.now().toString());
+            try {
+                const resp = await fetch(`${API_BASE}/admin/taobao-orders?${params.toString()}`, { headers: { 'X-API-Key': 'n1lab2026' }, cache: 'no-store' });
+                const rows = await resp.json();
+                const tbody = document.getElementById('tb-orders-body');
+                if (!resp.ok) throw new Error(rows.detail || '加载失败');
+                if (!rows.length) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:#8c8c8c;">暂无淘宝订单数据</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = rows.map(row => {
+                    const invoiceStatus = row.invoice_status || '未知';
+                    const invoiceTag = row.invoice_candidate
+                        ? '<span style="background:#fff7e6; color:#d46b08; padding:2px 8px; border-radius:4px; margin-right:6px;">可开票</span>'
+                        : '';
+                    const invoiceBadge = invoiceStatus === '已下载'
+                        ? '<span style="background:#f6ffed; color:#389e0d; padding:2px 8px; border-radius:4px;">已下载</span>'
+                        : invoiceStatus === '已开票'
+                            ? '<span style="background:#e6f4ff; color:#1677ff; padding:2px 8px; border-radius:4px;">已开票</span>'
+                            : invoiceStatus === '开票中'
+                                ? '<span style="background:#fff7e6; color:#d46b08; padding:2px 8px; border-radius:4px;">开票中</span>'
+                                : `<span>${invoiceStatus}</span>`;
+                    return `
+                    <tr>
+                        <td style="font-weight:bold; color:#1890ff;">${row.taobao_order_no}</td>
+                        <td>${row.order_time || '-'}</td>
+                        <td>${row.seller_name || '-'}</td>
+                        <td>${row.product_title || '-'}</td>
+                        <td>¥${(row.amount_value || 0).toFixed(2)}</td>
+                        <td>${row.order_status || '-'}</td>
+                        <td>${invoiceTag}${invoiceBadge}</td>
+                    </tr>
+                `}).join('');
+            } catch (e) {
+                console.error('加载淘宝订单失败:', e);
+                document.getElementById('tb-orders-body').innerHTML = `<tr><td colspan="7" style="text-align:center; padding:32px; color:red;">${e.message}</td></tr>`;
+            }
+        }
+
+        async function loadTaobaoInvoicesTable(force = false) {
+            try {
+                const url = force ? `${API_BASE}/admin/taobao-invoices?_t=${Date.now()}` : `${API_BASE}/admin/taobao-invoices`;
+                const resp = await fetch(url, { headers: { 'X-API-Key': 'n1lab2026' }, cache: 'no-store' });
+                const rows = await resp.json();
+                const tbody = document.getElementById('tb-invoices-body');
+                if (!resp.ok) throw new Error(rows.detail || '加载失败');
+                if (!rows.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:32px; color:#8c8c8c;">暂无发票数据</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = rows.map(row => `
+                    <tr>
+                        <td style="font-weight:bold; color:#1890ff;">${row.taobao_order_no || '-'}</td>
+                        <td>${row.invoice_no || '-'}</td>
+                        <td>${row.invoice_title || '-'}</td>
+                        <td>¥${(row.invoice_amount_value || 0).toFixed(2)}</td>
+                        <td>${row.download_status === 'downloaded' ? '<span style="background:#f6ffed; color:#389e0d; padding:2px 8px; border-radius:4px;">已下载</span>' : (row.invoice_status || 'pending')}</td>
+                        <td>${row.file_url ? `<a href="${row.file_url}" target="_blank" style="color:#1890ff;">🔗 打开</a>` : '-'}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error('加载发票失败:', e);
+                document.getElementById('tb-invoices-body').innerHTML = `<tr><td colspan="6" style="text-align:center; padding:32px; color:red;">${e.message}</td></tr>`;
+            }
+        }
+
+        function syncCurrentTaobaoOrders() {
+            console.log('🧪 sending N1_CAPTURE_TAOBAO_ORDERS from admin page');
+            window.postMessage({ action: 'N1_CAPTURE_TAOBAO_ORDERS' }, '*');
+            setTimeout(() => alert('已向插件发送同步指令。如果控制台没有出现 “window message received”，说明当前插件版本还没更新到最新。'), 50);
+        }
+
+        function syncCurrentInvoicePage() {
+            console.log('🧪 sending N1_CAPTURE_INVOICE_PAGE from admin page');
+            window.postMessage({ action: 'N1_CAPTURE_INVOICE_PAGE' }, '*');
+            setTimeout(() => alert('已向插件发送同步指令。如果控制台没有出现 “window message received”，说明当前插件版本还没更新到最新。'), 50);
         }
     </script>
 </body>

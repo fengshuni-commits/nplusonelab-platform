@@ -61,12 +61,29 @@ class Product(Base):
     dealer_price = Column(Float)
     retail_price = Column(Float)
     stock_quantity = Column(Integer, default=0)  # 产品库存（整体）
-    kit_stock_quantity = Column(Integer, default=0)  # 零件包库存（新增）
+    kit_stock_quantity = Column(Integer, default=0)  # 产品级零件包库存（兼容旧结构）
     kit_cost = Column(Float, default=0)  # 零件包成本（从 BOM 同步）
     total_bom_cost = Column(Float, default=0)  # 整体 BOM 成本（从 BOM 同步）
     sale_type = Column(String, default="parts_pack")  # 销售类型：parts_pack|complete
     is_parts_pack = Column(Boolean, default=True)  # 是否零件包
     bom_items = relationship("BOMItem", back_populates="product")
+
+class KitInventoryGroup(Base):
+    __tablename__ = "kit_inventory_groups"
+    id = Column(Integer, primary_key=True, index=True)
+    group_code = Column(String, unique=True, index=True)
+    group_name = Column(String)
+    shared_stock_quantity = Column(Integer, default=0)
+    note = Column(String, default="")
+    created_at = Column(DateTime, default=beijing_now)
+    updated_at = Column(DateTime, default=beijing_now)
+
+class KitInventoryGroupItem(Base):
+    __tablename__ = "kit_inventory_group_items"
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("kit_inventory_groups.id"), index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), index=True)
+    created_at = Column(DateTime, default=beijing_now)
 
 class BOMItem(Base):
     __tablename__ = "bom_items"
@@ -251,6 +268,44 @@ def ensure_additional_tables():
             )
         """))
         conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS taobao_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                taobao_order_no TEXT UNIQUE,
+                order_time TEXT DEFAULT '',
+                seller_name TEXT DEFAULT '',
+                buyer_name TEXT DEFAULT '',
+                product_title TEXT DEFAULT '',
+                sku_text TEXT DEFAULT '',
+                amount_text TEXT DEFAULT '',
+                amount_value REAL DEFAULT 0,
+                order_status TEXT DEFAULT '',
+                invoice_status TEXT DEFAULT 'unknown',
+                invoice_candidate INTEGER DEFAULT 0,
+                source_page_url TEXT DEFAULT '',
+                raw_payload TEXT DEFAULT '',
+                last_synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS taobao_invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                taobao_order_no TEXT,
+                invoice_no TEXT DEFAULT '',
+                invoice_title TEXT DEFAULT '',
+                invoice_amount_text TEXT DEFAULT '',
+                invoice_amount_value REAL DEFAULT 0,
+                invoice_status TEXT DEFAULT '',
+                file_url TEXT DEFAULT '',
+                download_status TEXT DEFAULT 'pending',
+                downloaded_file TEXT DEFAULT '',
+                source_page_url TEXT DEFAULT '',
+                raw_payload TEXT DEFAULT '',
+                last_synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
             CREATE TABLE IF NOT EXISTS kit_allocations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 order_id INTEGER,
@@ -347,6 +402,153 @@ class ProcurementEditItem(BaseModel):
 class ProcurementSaveRequest(BaseModel):
     items: List[ProcurementEditItem]
     note: Optional[str] = ""
+
+class TaobaoOrderSyncItem(BaseModel):
+    taobao_order_no: str
+    order_time: Optional[str] = ""
+    seller_name: Optional[str] = ""
+    buyer_name: Optional[str] = ""
+    product_title: Optional[str] = ""
+    sku_text: Optional[str] = ""
+    amount_text: Optional[str] = ""
+    amount_value: Optional[float] = 0
+    order_status: Optional[str] = ""
+    invoice_status: Optional[str] = "unknown"
+    invoice_candidate: Optional[bool] = False
+    source_page_url: Optional[str] = ""
+    raw_payload: Optional[str] = ""
+
+class TaobaoOrderSyncRequest(BaseModel):
+    items: List[TaobaoOrderSyncItem]
+
+class TaobaoInvoiceSyncItem(BaseModel):
+    taobao_order_no: Optional[str] = ""
+    invoice_no: Optional[str] = ""
+    invoice_title: Optional[str] = ""
+    invoice_amount_text: Optional[str] = ""
+    invoice_amount_value: Optional[float] = 0
+    invoice_status: Optional[str] = ""
+    file_url: Optional[str] = ""
+    download_status: Optional[str] = "pending"
+    downloaded_file: Optional[str] = ""
+    source_page_url: Optional[str] = ""
+    raw_payload: Optional[str] = ""
+
+class TaobaoInvoiceSyncRequest(BaseModel):
+    items: List[TaobaoInvoiceSyncItem]
+
+def ensure_shared_inventory_tables(db: Session):
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS kit_inventory_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_code TEXT UNIQUE,
+            group_name TEXT,
+            shared_stock_quantity INTEGER DEFAULT 0,
+            note TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS kit_inventory_group_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(group_id, product_id)
+        )
+    """))
+    db.commit()
+
+
+def get_inventory_group_for_product(product_id: int, db: Session):
+    ensure_shared_inventory_tables(db)
+    row = db.execute(text("""
+        SELECT g.id, g.group_code, g.group_name, g.shared_stock_quantity, g.note
+        FROM kit_inventory_groups g
+        JOIN kit_inventory_group_items i ON i.group_id = g.id
+        WHERE i.product_id = :pid
+        LIMIT 1
+    """), {"pid": product_id}).fetchone()
+    return row
+
+
+def get_shareable_bom_signature(product_id: int, db: Session):
+    rows = db.execute(text("""
+        SELECT part_name, specs, quantity
+        FROM bom_items
+        WHERE product_id = :pid
+        ORDER BY id
+    """), {"pid": product_id}).fetchall()
+
+    shareable_keywords = [
+        "铝型材", "螺丝", "螺母", "角码", "角槽", "端盖", "脚杯", "垫", "光轴", "连接件", "扳手", "扣件", "打孔", "滑轨"
+    ]
+    exclude_keywords = [
+        "玻璃", "亚克力", "海洋板", "板", "桌面", "侧板", "抽屉", "层板", "展示板", "织物", "运费"
+    ]
+
+    normalized = []
+    for r in rows:
+        name = (r[0] or "").strip()
+        specs = (r[1] or "").strip()
+        qty = str(r[2] or "").strip()
+        full = f"{name} {specs}"
+        if any(k in full for k in exclude_keywords):
+            continue
+        if shareable_keywords and not any(k in full for k in shareable_keywords):
+            continue
+        normalized.append((name, specs, qty))
+
+    return tuple(sorted(normalized))
+
+
+def backfill_shared_inventory_group(product, db: Session):
+    ensure_shared_inventory_tables(db)
+    existing = get_inventory_group_for_product(product.id, db)
+    if existing:
+        return existing
+
+    product_signature = get_shareable_bom_signature(product.id, db)
+    if not product_signature:
+        return None
+
+    all_products = db.query(Product).all()
+    shared_products = []
+    for candidate in all_products:
+        candidate_signature = get_shareable_bom_signature(candidate.id, db)
+        if candidate_signature and candidate_signature == product_signature:
+            shared_products.append(candidate)
+
+    if len(shared_products) <= 1:
+        return None
+
+    shared_skus = sorted([p.sku_code for p in shared_products if p.sku_code])
+    group_code = f"KIT-{'-'.join(shared_skus)}"
+    group_name = " / ".join(shared_skus) + " 共享零件包库存"
+    group = db.execute(text("SELECT id, group_code, group_name, shared_stock_quantity, note FROM kit_inventory_groups WHERE group_code = :code LIMIT 1"), {"code": group_code}).fetchone()
+    if not group:
+        total_stock = sum(int(p.kit_stock_quantity or 0) for p in shared_products)
+        db.execute(text("""
+            INSERT INTO kit_inventory_groups (group_code, group_name, shared_stock_quantity, note, created_at, updated_at)
+            VALUES (:code, :name, :stock, :note, :now, :now)
+        """), {
+            "code": group_code,
+            "name": group_name,
+            "stock": total_stock,
+            "note": "按可共享 BOM 子集自动回填",
+            "now": beijing_now()
+        })
+        db.commit()
+        group = db.execute(text("SELECT id, group_code, group_name, shared_stock_quantity, note FROM kit_inventory_groups WHERE group_code = :code LIMIT 1"), {"code": group_code}).fetchone()
+
+    for p in shared_products:
+        db.execute(text("INSERT OR IGNORE INTO kit_inventory_group_items (group_id, product_id) VALUES (:gid, :pid)"), {"gid": group[0], "pid": p.id})
+        if int(p.kit_stock_quantity or 0) != 0:
+            p.kit_stock_quantity = 0
+    db.commit()
+    return get_inventory_group_for_product(product.id, db)
+
 
 def recalc_product_bom_costs(product_id: int, db: Session):
     rows = db.execute(text("""
@@ -1061,6 +1263,9 @@ def get_products_bom_costs(db: Session = Depends(get_db), auth=Depends(verify_au
         retail_profit = p.retail_price - total_bom_cost if p.retail_price > 0 else 0
         retail_margin = ((p.retail_price - total_bom_cost) / p.retail_price * 100) if p.retail_price > 0 else 0
         
+        group = get_inventory_group_for_product(p.id, db) or backfill_shared_inventory_group(p, db)
+        effective_kit_stock = group[3] if group else (p.kit_stock_quantity or 0)
+
         result.append({
             "id": p.id,
             "sku_code": p.sku_code,
@@ -1075,7 +1280,9 @@ def get_products_bom_costs(db: Session = Depends(get_db), auth=Depends(verify_au
             "retail_profit": round(retail_profit, 2),  # 整体销售毛利润
             "retail_margin": round(retail_margin, 2),  # 整体销售毛利率
             "stock_quantity": p.stock_quantity,  # 产品库存
-            "kit_stock_quantity": p.kit_stock_quantity,  # 零件包库存（新增）
+            "kit_stock_quantity": effective_kit_stock,
+            "inventory_group_code": group[1] if group else None,
+            "inventory_group_name": group[2] if group else None,
             "bom_count": bom_count  # 零件数量
         })
     
@@ -1108,24 +1315,37 @@ def update_product_stock(
     db: Session = Depends(get_db),
     auth=Depends(verify_auth)
 ):
-    """更新产品库存（支持分别更新产品库存和零件包库存）"""
+    """更新产品库存（支持产品库存 + 共享零件包库存）"""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
-    
+
     if stock_quantity is not None:
         product.stock_quantity = stock_quantity
+
+    group = get_inventory_group_for_product(product_id, db) or backfill_shared_inventory_group(product, db)
     if kit_stock_quantity is not None:
-        product.kit_stock_quantity = kit_stock_quantity
-    
+        if group:
+            db.execute(text("UPDATE kit_inventory_groups SET shared_stock_quantity = :qty, updated_at = :now WHERE id = :gid"), {
+                "qty": kit_stock_quantity,
+                "now": beijing_now(),
+                "gid": group[0]
+            })
+        else:
+            product.kit_stock_quantity = kit_stock_quantity
+
     db.commit()
-    
+
+    refreshed_group = get_inventory_group_for_product(product_id, db)
+    effective_kit_stock = refreshed_group[3] if refreshed_group else product.kit_stock_quantity
+
     return {
         "status": "success",
         "message": "库存已更新",
         "data": {
             "stock_quantity": product.stock_quantity,
-            "kit_stock_quantity": product.kit_stock_quantity
+            "kit_stock_quantity": effective_kit_stock,
+            "inventory_group_code": refreshed_group[1] if refreshed_group else None
         }
     }
 
@@ -1874,54 +2094,84 @@ def allocate_kit_to_order(
     db: Session = Depends(get_db),
     auth=Depends(verify_auth)
 ):
-    """为订单调用零件包库存"""
+    """为订单调用零件包库存，并自动扣减库存"""
     product_id = alloc_data.get("product_id")
-    quantity = alloc_data.get("quantity", 1)
-    
-    # 检查产品库存
+    quantity = int(alloc_data.get("quantity", 1) or 1)
+
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    old_status = order.status or "pending"
+
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="产品不存在")
-    
-    if product.kit_stock_quantity < quantity:
-        raise HTTPException(status_code=400, detail=f"零件包库存不足，当前库存：{product.kit_stock_quantity}")
-    
-    # 扣减库存
-    product.kit_stock_quantity -= quantity
-    
-    # 记录调用日志
+
+    group = get_inventory_group_for_product(product.id, db) or backfill_shared_inventory_group(product, db)
+
+    deduction_logs = []
+    if group:
+        total_shared_stock = int(group[3] or 0)
+        if total_shared_stock < quantity:
+            raise HTTPException(status_code=400, detail=f"零件包库存不足，当前共享库存：{total_shared_stock}")
+        db.execute(text("UPDATE kit_inventory_groups SET shared_stock_quantity = shared_stock_quantity - :qty, updated_at = :now WHERE id = :gid"), {
+            "qty": quantity,
+            "now": beijing_now(),
+            "gid": group[0]
+        })
+        members = db.execute(text("""
+            SELECT p.sku_code
+            FROM products p
+            JOIN kit_inventory_group_items i ON i.product_id = p.id
+            WHERE i.group_id = :gid
+            ORDER BY p.sku_code
+        """), {"gid": group[0]}).fetchall()
+        deduction_logs.append(f"{group[1]} -{quantity}")
+    else:
+        current_stock = int(product.kit_stock_quantity or 0)
+        if current_stock < quantity:
+            raise HTTPException(status_code=400, detail=f"零件包库存不足，当前库存：{current_stock}")
+        product.kit_stock_quantity = current_stock - quantity
+        total_shared_stock = product.kit_stock_quantity
+        deduction_logs.append(f"{product.sku_code} -{quantity}")
+
     db.execute(text("""
-        INSERT INTO kit_allocations (order_id, product_id, kit_sku, kit_name, quantity, kit_cost, total_cost, user_id)
-        VALUES (:order_id, :product_id, :kit_sku, :kit_name, :quantity, :kit_cost, :total_cost, 1)
+        INSERT INTO kit_allocations (order_id, product_id, kit_sku, quantity)
+        VALUES (:order_id, :product_id, :kit_sku, :quantity)
     """), {
         "order_id": order_id,
         "product_id": product_id,
         "kit_sku": product.sku_code,
-        "kit_name": product.product_name,
-        "quantity": quantity,
-        "kit_cost": product.kit_cost or 0,
-        "total_cost": (product.kit_cost or 0) * quantity,
-        "user_id": 1
+        "quantity": quantity
     })
-    
-    # 更新订单关联
+
+    order.kit_id = product_id
+    order.kit_quantity = quantity
+    order.procurement_cost = (product.kit_cost or 0) * quantity
+    order.status = "prepared"
+    order.prepared_at = beijing_now()
+    order.updated_at = beijing_now()
+
     db.execute(text("""
-        UPDATE orders
-        SET kit_id = :product_id, kit_quantity = :quantity, updated_at = :updated_at
-        WHERE id = :order_id
+        INSERT INTO order_logs (order_id, action, old_status, new_status, detail)
+        VALUES (:order_id, 'allocate_kit', :old_status, 'prepared', :detail)
     """), {
         "order_id": order_id,
-        "product_id": product_id,
-        "quantity": quantity,
-        "updated_at": beijing_now()
+        "old_status": old_status,
+        "detail": f"调用库存：{product.sku_code} × {quantity}，共享库存扣减：{'; '.join(deduction_logs)}"
     })
-    
+
     db.commit()
-    
+
     return {
         "status": "success",
-        "message": f"已调用 {quantity} 个零件包",
-        "kit_stock_after": product.kit_stock_quantity
+        "message": f"已调用 {quantity} 个零件包库存{'（共享组：' + group[1] + '）' if group else ''}",
+        "kit_stock_after": product.kit_stock_quantity,
+        "shared_stock_after": total_shared_stock - quantity if group else total_shared_stock,
+        "inventory_group_code": group[1] if group else None,
+        "deduction_logs": deduction_logs,
+        "procurement_cost": order.procurement_cost,
+        "order_status": order.status
     }
 
 @app.get("/admin/orders/{order_id}/procurement-list")
@@ -2185,6 +2435,252 @@ def get_consolidated_bom(
         "gross_profit": round(total_revenue - total_cost, 2),
         "profit_margin": round((total_revenue - total_cost) / total_revenue * 100, 2) if total_revenue > 0 else 0,
         "bom_items": bom_list
+    }
+
+@app.post("/admin/taobao-orders/sync")
+def sync_taobao_orders(
+    payload: TaobaoOrderSyncRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    synced = 0
+    for item in payload.items:
+        if not item.taobao_order_no:
+            continue
+        db.execute(text("""
+            INSERT INTO taobao_orders (
+                taobao_order_no, order_time, seller_name, buyer_name, product_title, sku_text,
+                amount_text, amount_value, order_status, invoice_status, invoice_candidate,
+                source_page_url, raw_payload, last_synced_at
+            ) VALUES (
+                :taobao_order_no, :order_time, :seller_name, :buyer_name, :product_title, :sku_text,
+                :amount_text, :amount_value, :order_status, :invoice_status, :invoice_candidate,
+                :source_page_url, :raw_payload, :last_synced_at
+            )
+            ON CONFLICT(taobao_order_no) DO UPDATE SET
+                order_time=excluded.order_time,
+                seller_name=excluded.seller_name,
+                buyer_name=excluded.buyer_name,
+                product_title=excluded.product_title,
+                sku_text=excluded.sku_text,
+                amount_text=excluded.amount_text,
+                amount_value=excluded.amount_value,
+                order_status=excluded.order_status,
+                invoice_status=excluded.invoice_status,
+                invoice_candidate=excluded.invoice_candidate,
+                source_page_url=excluded.source_page_url,
+                raw_payload=excluded.raw_payload,
+                last_synced_at=excluded.last_synced_at
+        """), {
+            "taobao_order_no": item.taobao_order_no,
+            "order_time": item.order_time or "",
+            "seller_name": item.seller_name or "",
+            "buyer_name": item.buyer_name or "",
+            "product_title": item.product_title or "",
+            "sku_text": item.sku_text or "",
+            "amount_text": item.amount_text or "",
+            "amount_value": float(item.amount_value or 0),
+            "order_status": item.order_status or "",
+            "invoice_status": item.invoice_status or "未知",
+            "invoice_candidate": 1 if item.invoice_candidate else 0,
+            "source_page_url": item.source_page_url or "",
+            "raw_payload": item.raw_payload or "",
+            "last_synced_at": beijing_now()
+        })
+        synced += 1
+    db.commit()
+    return {"status": "success", "synced": synced}
+
+@app.get("/admin/taobao-orders")
+def list_taobao_orders(
+    search: Optional[str] = None,
+    invoice_candidate: Optional[bool] = None,
+    invoice_status: Optional[str] = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    conditions = ["1=1"]
+    params = {"limit": limit}
+    if search:
+        conditions.append("(taobao_order_no LIKE :search OR product_title LIKE :search OR seller_name LIKE :search)")
+        params["search"] = f"%{search}%"
+    if invoice_candidate is not None:
+        conditions.append("invoice_candidate = :invoice_candidate")
+        params["invoice_candidate"] = 1 if invoice_candidate else 0
+    if invoice_status:
+        if invoice_status == '已开票':
+            conditions.append("invoice_status IN ('已开票', '已下载')")
+        else:
+            conditions.append("invoice_status = :invoice_status")
+            params["invoice_status"] = invoice_status
+
+    rows = db.execute(text(f"""
+        SELECT taobao_order_no, order_time, seller_name, buyer_name, product_title, sku_text,
+               amount_text, amount_value, order_status, invoice_status, invoice_candidate,
+               source_page_url, last_synced_at
+        FROM taobao_orders
+        WHERE {' AND '.join(conditions)}
+        ORDER BY COALESCE(order_time, '') DESC, id DESC
+        LIMIT :limit
+    """), params).fetchall()
+
+    return [{
+        "taobao_order_no": r[0],
+        "order_time": r[1] or "",
+        "seller_name": r[2] or "",
+        "buyer_name": r[3] or "",
+        "product_title": r[4] or "",
+        "sku_text": r[5] or "",
+        "amount_text": r[6] or "",
+        "amount_value": r[7] or 0,
+        "order_status": r[8] or "",
+        "invoice_status": r[9] or "未知",
+        "invoice_candidate": bool(r[10]),
+        "source_page_url": r[11] or "",
+        "last_synced_at": str(r[12]) if r[12] else ""
+    } for r in rows]
+
+@app.post("/admin/taobao-invoices/sync")
+def sync_taobao_invoices(
+    payload: TaobaoInvoiceSyncRequest,
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    synced = 0
+    for item in payload.items:
+        key_order_no = item.taobao_order_no or ""
+        key_invoice_no = item.invoice_no or ""
+        if not key_order_no and not key_invoice_no:
+            continue
+        existing = db.execute(text("""
+            SELECT id FROM taobao_invoices
+            WHERE (taobao_order_no = :taobao_order_no AND :taobao_order_no != '')
+               OR (invoice_no = :invoice_no AND :invoice_no != '')
+            LIMIT 1
+        """), {"taobao_order_no": key_order_no, "invoice_no": key_invoice_no}).fetchone()
+        if existing:
+            db.execute(text("""
+                UPDATE taobao_invoices SET
+                    taobao_order_no=:taobao_order_no,
+                    invoice_no=:invoice_no,
+                    invoice_title=:invoice_title,
+                    invoice_amount_text=:invoice_amount_text,
+                    invoice_amount_value=:invoice_amount_value,
+                    invoice_status=:invoice_status,
+                    file_url=:file_url,
+                    download_status=:download_status,
+                    downloaded_file=:downloaded_file,
+                    source_page_url=:source_page_url,
+                    raw_payload=:raw_payload,
+                    last_synced_at=:last_synced_at
+                WHERE id=:id
+            """), {
+                "id": existing[0],
+                "taobao_order_no": key_order_no,
+                "invoice_no": key_invoice_no,
+                "invoice_title": item.invoice_title or "",
+                "invoice_amount_text": item.invoice_amount_text or "",
+                "invoice_amount_value": float(item.invoice_amount_value or 0),
+                "invoice_status": item.invoice_status or "",
+                "file_url": item.file_url or "",
+                "download_status": item.download_status or "pending",
+                "downloaded_file": item.downloaded_file or "",
+                "source_page_url": item.source_page_url or "",
+                "raw_payload": item.raw_payload or "",
+                "last_synced_at": beijing_now()
+            })
+        else:
+            db.execute(text("""
+                INSERT INTO taobao_invoices (
+                    taobao_order_no, invoice_no, invoice_title, invoice_amount_text, invoice_amount_value,
+                    invoice_status, file_url, download_status, downloaded_file, source_page_url, raw_payload, last_synced_at
+                ) VALUES (
+                    :taobao_order_no, :invoice_no, :invoice_title, :invoice_amount_text, :invoice_amount_value,
+                    :invoice_status, :file_url, :download_status, :downloaded_file, :source_page_url, :raw_payload, :last_synced_at
+                )
+            """), {
+                "taobao_order_no": key_order_no,
+                "invoice_no": key_invoice_no,
+                "invoice_title": item.invoice_title or "",
+                "invoice_amount_text": item.invoice_amount_text or "",
+                "invoice_amount_value": float(item.invoice_amount_value or 0),
+                "invoice_status": item.invoice_status or "",
+                "file_url": item.file_url or "",
+                "download_status": item.download_status or "pending",
+                "downloaded_file": item.downloaded_file or "",
+                "source_page_url": item.source_page_url or "",
+                "raw_payload": item.raw_payload or "",
+                "last_synced_at": beijing_now()
+            })
+        synced += 1
+    db.commit()
+    return {"status": "success", "synced": synced}
+
+@app.get("/admin/taobao-invoices")
+def list_taobao_invoices(
+    search: Optional[str] = None,
+    download_status: Optional[str] = None,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    conditions = ["1=1"]
+    params = {"limit": limit}
+    if search:
+        conditions.append("(taobao_order_no LIKE :search OR invoice_no LIKE :search OR invoice_title LIKE :search)")
+        params["search"] = f"%{search}%"
+    if download_status:
+        conditions.append("download_status = :download_status")
+        params["download_status"] = download_status
+
+    rows = db.execute(text(f"""
+        SELECT taobao_order_no, invoice_no, invoice_title, invoice_amount_text, invoice_amount_value,
+               invoice_status, file_url, download_status, downloaded_file, source_page_url, last_synced_at
+        FROM taobao_invoices
+        WHERE {' AND '.join(conditions)}
+        ORDER BY COALESCE(last_synced_at, '') DESC, id DESC
+        LIMIT :limit
+    """), params).fetchall()
+
+    return [{
+        "taobao_order_no": r[0] or "",
+        "invoice_no": r[1] or "",
+        "invoice_title": r[2] or "",
+        "invoice_amount_text": r[3] or "",
+        "invoice_amount_value": r[4] or 0,
+        "invoice_status": r[5] or "",
+        "file_url": r[6] or "",
+        "download_status": r[7] or "pending",
+        "downloaded_file": r[8] or "",
+        "source_page_url": r[9] or "",
+        "last_synced_at": str(r[10]) if r[10] else ""
+    } for r in rows]
+
+@app.get("/admin/taobao-overview")
+def get_taobao_overview(
+    db: Session = Depends(get_db),
+    auth=Depends(verify_auth)
+):
+    order_stats = db.execute(text("""
+        SELECT COUNT(*),
+               COALESCE(SUM(amount_value), 0),
+               COALESCE(SUM(CASE WHEN invoice_candidate = 1 THEN 1 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN invoice_status = 'downloaded' THEN 1 ELSE 0 END), 0)
+        FROM taobao_orders
+    """)).fetchone()
+    invoice_stats = db.execute(text("""
+        SELECT COUNT(*),
+               COALESCE(SUM(CASE WHEN download_status = 'downloaded' THEN 1 ELSE 0 END), 0)
+        FROM taobao_invoices
+    """)).fetchone()
+    return {
+        "orders_total": order_stats[0] or 0,
+        "orders_amount_total": round(order_stats[1] or 0, 2),
+        "invoice_candidate_count": order_stats[2] or 0,
+        "orders_downloaded_count": order_stats[3] or 0,
+        "invoices_total": invoice_stats[0] or 0,
+        "invoices_downloaded_count": invoice_stats[1] or 0
     }
 
 @app.get("/admin/orders/procurement-query")
